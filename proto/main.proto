@@ -1,0 +1,53 @@
+// PATH="${PATH}:${HOME}/go/bin" protoc --go_out=. --go_opt=paths=source_relative \                                                                                                              main * ] 10:40 pm
+//   --go-grpc_out=. --go-grpc_opt=paths=source_relative \
+//   main.proto
+
+syntax="proto3";
+
+package com;
+option go_package = "../proto";
+
+service RaftVoting {
+  rpc RequestVotes (Term) returns (Vote) {}
+}
+service DataSync {
+  rpc NewEvent (Order) returns (Ok){ } // followers call on leader
+  rpc SaveOrder (Order) returns (Ok){ } // leader calls on followers
+  rpc GetSyncData (Ok) returns (Order){ } // leader return gossip nw
+  rpc GetPacketAddresses (Ok) returns (Peers){ } // leader return gossip nw
+  rpc GetNetworkView (Ok) returns (Peers){ } // leader return gossip nw
+}
+message Ok {
+  string Id = 1;
+}
+message Order {
+  repeated Event Events =1;
+}
+message Event {
+  string EventId = 1;
+  repeated VClock clockEntries = 3;
+}
+message VClock {
+  string address = 1;
+  int32 clockCount = 2;
+}
+message Peers {
+  repeated Peer peers = 1;
+}
+message Peer {
+  string udpAddress =1;
+  string peerId = 2;
+}
+message Term {
+  int32 TermCount = 1;
+  string leaderHttpPort = 2;
+  string leaderGrpcPort = 3;
+  string leaderUdpPort = 4;
+  string leaderHostname = 5;
+
+  int32 Zone=6;
+  int32 Mode=7;
+}
+message Vote {
+  bool Elected = 1;
+}
