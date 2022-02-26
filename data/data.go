@@ -1,6 +1,7 @@
 package data
 
 import (
+	"fmt"
 	"sync"
 
 	gossip "github.com/Ishan27g/gossipProtocol"
@@ -40,6 +41,7 @@ func (ld *localData) GetPacket(id string) *gossip.Packet {
 	if gP := ld.tmpGossip.Get(id); gP != nil {
 		return gP
 	}
+	fmt.Println("\t\t\t\tno packet - ", id)
 	return nil
 }
 func (ld *localData) GetPacketAvailableAt(id string) []string {

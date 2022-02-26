@@ -30,7 +30,7 @@ func MockRegistry() {
 }
 
 func EventsToOrder(events []vClock.Event) *proto.Order {
-	order := proto.Order{Events: []*proto.Event{}}
+	var order = new(proto.Order)
 	for _, event := range events {
 		ev := proto.Event{
 			EventId:      event.EventId,
@@ -44,7 +44,7 @@ func EventsToOrder(events []vClock.Event) *proto.Order {
 		}
 		order.Events = append(order.Events, &ev)
 	}
-	return &order
+	return order
 }
 
 func OrderToEvents(order *proto.Order) []vClock.Event {

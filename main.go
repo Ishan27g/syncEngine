@@ -36,7 +36,9 @@ type dataManager struct {
 	LastOrderHash string
 	round         int
 
-	enginePeers func() []peer.Peer
+	zonePeers func() []peer.Peer
+	syncPeers func() []peer.Peer
+	hclog.Logger
 }
 type voteManager struct {
 	self  func() *peer.Peer
@@ -81,11 +83,22 @@ func (d *dataManager) NewEvent(ctx context.Context, order *proto.Order) (*proto.
 	return rsp, nil
 }
 func (d *dataManager) saveSnapshot() {
-	entries := utils.OrderToEntries(d.Data.GetOrderedPackets()...)
+	o := d.Data.GetOrderedPackets()
+	if len(o) == 0 {
+		return
+	}
+	entries := utils.OrderToEntries(o...)
+	// d.Info("Saving " + utils.PrintJson(entries))
+	if entries == nil || len(entries) == 0 {
+		d.Info("Nothing to save in snapshot")
+		return
+	}
 	currentHash := utils.DefaultHash(entries)
 	if d.sm.LastSnapshotHash != currentHash {
 		d.sm.Apply(entries...)
+		fmt.Println(d.sm.Get())
 		d.sm.Save()
+		d.Info("Saved snapshot")
 	}
 	d.sm.LastSnapshotHash = currentHash
 }
@@ -95,17 +108,18 @@ func (d *dataManager) sendOrderToFollowers(order *proto.Order) {
 	}
 	ctx, can := context.WithDeadline(context.Background(), time.Now().Add(10*time.Second))
 	defer can()
-	for _, f := range d.enginePeers() {
+	for _, f := range d.zonePeers() {
 		c := transport.NewDataSyncClient(f.UdpAddr())
 		c.SaveOrder(ctx, order)
 		c.Disconnect()
 	}
 }
 func (d *dataManager) SaveOrder(ctx context.Context, order *proto.Order) (*proto.Ok, error) {
-
 	e := utils.OrderToEvents(order)
+	d.Info("Saving order " + utils.PrintJson(e))
 	d.Events.MergeEvents(e...)
 	o := d.Events.GetOrderedIds()
+	d.Info("App order " + utils.PrintJson(e))
 	d.Data.ApplyOrder(o)
 	orderHash := utils.DefaultHash(o)
 
@@ -140,7 +154,7 @@ func (d *dataManager) GetPacketAddresses(ctx context.Context, ok *proto.Ok) (*pr
 }
 
 func (d *dataManager) GetNetworkView(ctx context.Context, ok *proto.Ok) (*proto.Peers, error) {
-	if !d.isSyncLeader() {
+	if !d.isZoneLeader() || !d.isSyncLeader() {
 		return &proto.Peers{Peers: []*proto.Peer{}}, nil
 	}
 	gossipPeers := transport.RandomGossipPeers("")
@@ -202,6 +216,7 @@ func getPacket(dm *dataManager) func(id string) *gossip.Packet {
 func getData(eng *engine.Engine, dm *dataManager) func() transport.SyncRsp {
 	return func() transport.SyncRsp {
 		entries := snapshot.FromFile(eng.DataFile).Get()
+		dm.Warn("Snapshot read from file - " + utils.PrintJson(entries))
 		var ee []snapshot.Entry
 		for _, entry := range entries {
 			if dm.sm.RoundNum > entry.Round {
@@ -241,7 +256,6 @@ func Start(ctx context.Context, envFile string) (*dataManager, *gossipManager, *
 	gsp, gspRcv := gossip.Config(self.HostName, self.UdpPort, self.HttpAddr()) // id=availableAt for packet
 
 	mLogger.Apply(mLogger.Level(hclog.Trace), mLogger.Color(true))
-
 	gm := gossipManager{
 		gsp: gsp,
 		rcv: gspRcv,
@@ -265,9 +279,13 @@ func Start(ctx context.Context, envFile string) (*dataManager, *gossipManager, *
 		Events:        data.InitEvents(),
 		Tmp:           data.InitEvents(),
 		LastOrderHash: "",
-		enginePeers: func() []peer.Peer {
+		zonePeers: func() []peer.Peer {
 			return eng.GetFollowers()
 		},
+		syncPeers: func() []peer.Peer {
+			return eng.GetSyncFollowers()
+		},
+		Logger: mLogger.Get("dm" + self.HttpPort),
 	}
 
 	httpCbs := append(eng.BuildHttpCbs(), []transport.HTTPCbs{
@@ -305,19 +323,40 @@ func Start(ctx context.Context, envFile string) (*dataManager, *gossipManager, *
 	httpServer.Start(ctx)
 	eng.Start()
 
+	var p *proto.Peers
+	var gossipPeers []gossip.Peer
+
 	<-time.After(raft.Hb_Timeout * 2)
 	// sync Initial order
 	var initialEventOrder []vClock.Event // todo unused
 	var entries []snapshot.Entry
-
+	ctx1, cancel := context.WithDeadline(context.Background(), time.Now().Add(5*time.Second))
+	defer cancel()
 	if !dm.isZoneLeader() && !dm.isSyncLeader() { // follower
 		hClient.SendSyncRequest(dm.state().RaftLeader.HttpAddr(), &initialEventOrder, &entries, dm.state().Self)
+		c := transport.NewDataSyncClient(dm.state().RaftLeader.GrpcAddr())
+		p, _ = c.GetNetworkView(ctx1, &proto.Ok{})
+
 	} else if dm.isZoneLeader() && !dm.isSyncLeader() { // zoneLeader
 		hClient.SendSyncRequest(dm.state().SyncLeader.HttpAddr(), &initialEventOrder, &entries, dm.state().Self)
+		c := transport.NewDataSyncClient(dm.state().SyncLeader.GrpcAddr())
+		p, _ = c.GetNetworkView(ctx1, &proto.Ok{})
 	} else { // syncLeader
 		// first node in network
 	}
-	dm.sm.Sync(entries...)
+	if p != nil {
+		for _, peer := range p.Peers {
+			gossipPeers = append(gossipPeers, gossip.Peer{
+				UdpAddress:        peer.UdpAddress,
+				ProcessIdentifier: peer.PeerId,
+				Hop:               0,
+			})
+		}
+	}
+	gm.gsp.Join(gossipPeers...)
+	if len(entries) > 0 {
+		dm.sm.Sync(entries...)
+	}
 
 	dm.waitOnGossip(ctx, &gm, &hClient)
 	dm.waitOnMissingPackets(ctx, &hClient)
@@ -326,7 +365,7 @@ func Start(ctx context.Context, envFile string) (*dataManager, *gossipManager, *
 	return &dm, &gm, jp
 }
 func (dm *dataManager) startRoundSync(ctx context.Context, gm *gossipManager, hClient *transport.HttpClient) {
-	var syncDelay = 1200 * time.Millisecond
+	var syncDelay = 5000 * time.Millisecond
 
 	go func() {
 		for {
@@ -335,26 +374,31 @@ func (dm *dataManager) startRoundSync(ctx context.Context, gm *gossipManager, hC
 				return
 			case <-time.After(syncDelay):
 				if !dm.isZoneLeader() {
-					dm.Data.ApplyOrder(dm.Events.GetOrderedIds())
-					dm.saveSnapshot()
+					//dm.Info("As follower, Saving snapshot")
+					//dm.Data.ApplyOrder(dm.Events.GetOrderedIds())
+					// dm.saveSnapshot()
 					continue
 				}
 				if !dm.isSyncLeader() {
+					//dm.Info("Not follower or syncLeader")
 					continue
 				}
+				//dm.Trace("syncLeader: Syncing round data ... 1/4")
 				// send current events to other leaders and merge with response,
-				otherLeaders := dm.enginePeers()
-				for _, l := range otherLeaders {
+
+				for _, l := range dm.syncPeers() {
 					returnedEventsUnordered := hClient.SyncOrder(l.HttpAddr(), dm.Events.GetOrder())
 					dm.Events.MergeEvents(returnedEventsUnordered...)
 				}
 
 				fo := utils.EventsToOrder(dm.Events.GetOrder())
-
+				if fo == nil {
+					continue
+				}
 				// send calculated order to other leaders and zone followers
-				ctx1, cancel := context.WithDeadline(context.Background(), time.Now().Add(15*time.Second))
+				ctx1, cancel := context.WithDeadline(context.Background(), time.Now().Add(5*time.Second))
 				var wg sync.WaitGroup
-				for _, l := range otherLeaders {
+				for _, l := range dm.syncPeers() {
 					wg.Add(1)
 					go func(wg *sync.WaitGroup, l peer.Peer) {
 						defer wg.Done()
@@ -363,9 +407,10 @@ func (dm *dataManager) startRoundSync(ctx context.Context, gm *gossipManager, hC
 						c.Disconnect()
 					}(&wg, l)
 				}
-				for _, f := range dm.enginePeers() {
+				for _, f := range dm.zonePeers() {
 					wg.Add(1)
 					go func(wg *sync.WaitGroup, f peer.Peer) {
+						defer wg.Done()
 						c := transport.NewDataSyncClient(f.GrpcAddr())
 						c.SaveOrder(ctx1, fo)
 						c.Disconnect()
@@ -373,6 +418,7 @@ func (dm *dataManager) startRoundSync(ctx context.Context, gm *gossipManager, hC
 				}
 				wg.Wait()
 				cancel()
+				//dm.Trace("syncLeader: Applying snapshot ... 2/4")
 
 				dm.Data.ApplyOrder(dm.Events.GetOrderedIds())
 				dm.saveSnapshot()
@@ -381,18 +427,20 @@ func (dm *dataManager) startRoundSync(ctx context.Context, gm *gossipManager, hC
 				const RoundResolution = 5
 				if dm.round < RoundResolution {
 					dm.round++
+					//dm.Trace("syncLeader: in the same round ... 3/4 & 4/4")
 					continue
 				}
 				dm.round = 0
 				dm.sm.RoundNum++
+				//dm.Trace("syncLeader: Syncing round number ... 3/4")
 
 				ctx1, cancel = context.WithDeadline(context.Background(), time.Now().Add(15*time.Second))
-				for _, l := range otherLeaders {
+				for _, l := range dm.syncPeers() {
 					wg.Add(1)
 					go hClient.SendRoundNum(ctx1, &wg, dm.sm.RoundNum, l.HttpAddr())
 
 				}
-				for _, f := range dm.enginePeers() {
+				for _, f := range dm.zonePeers() {
 					wg.Add(1)
 					go hClient.SendRoundNum(ctx1, &wg, dm.sm.RoundNum, f.HttpAddr())
 				}
@@ -401,6 +449,7 @@ func (dm *dataManager) startRoundSync(ctx context.Context, gm *gossipManager, hC
 				dm.sm.Round()
 				dm.Events.Reset()
 				cancel()
+				//dm.Trace("syncLeader: Data sync complete...4/4")
 
 			}
 		}
@@ -413,6 +462,7 @@ func (dm *dataManager) waitOnGossip(ctx context.Context, gm *gossipManager, hCli
 			case <-ctx.Done():
 				return
 			case gp := <-gm.rcv:
+				//dm.Info("Received gossip packet from network", "id", gp.GetId())
 				var leader string
 				if !dm.isZoneLeader() {
 					// send event to zoneLeader
@@ -428,6 +478,8 @@ func (dm *dataManager) waitOnGossip(ctx context.Context, gm *gossipManager, hCli
 				c.Disconnect()
 
 				dm.Data.SaveUnorderedPacket(gp)
+				dm.Info("Saved unordered packet ", "id", gp.GetId())
+				dm.Info("Available at", "addrs", dm.Data.GetPacketAvailableAt(gp.GetId()))
 			}
 		}
 	}()
@@ -440,46 +492,50 @@ func (dm *dataManager) waitOnMissingPackets(ctx context.Context, hClient *transp
 			case <-ctx.Done():
 				return
 			case mp := <-dm.Data.MissingPacket():
-				try := 2
-				var leader string
+				if dm.Data.GetPacket(mp) != nil {
+					dm.Info("Already retrieved packet ", "id", mp)
+					continue
+				}
+				dm.Info("Retrieving missing packet ", "id", mp)
+				var peers []string
 				if !dm.isZoneLeader() {
 					// ask raftLeader for missing packet addresses
 
-					leader = dm.state().RaftLeader.GrpcAddr()
-					goto download
+					peers = append(peers, dm.state().RaftLeader.GrpcAddr())
+				} else if dm.isSyncLeader() {
+					for _, p := range dm.zonePeers() {
+						peers = append(peers, p.GrpcAddr())
+					}
 				} else {
 					// ask syncLeader for missing packet addresses
 
-					leader = dm.state().SyncLeader.GrpcAddr()
-					goto download
+					peers = append(peers, dm.state().SyncLeader.GrpcAddr())
 				}
-			download:
-				{
-					// ask leader for peers where packet is available
-
-					c := transport.NewDataSyncClient(leader)
+				// ask leader for peers where packet is available
+				for _, p := range peers {
+					c := transport.NewDataSyncClient(p)
 					ctx1, can := context.WithDeadline(context.Background(), time.Now().Add(10*time.Second))
+					dm.Info("Asking for packet at", "peer", p)
 					peers, _ := c.GetPacketAddresses(ctx1, &proto.Ok{Id: mp})
 					rand.Seed(time.Now().UnixMicro())
+					dm.Warn("Packet available at - " + utils.PrintJson(peers))
 					r := rand.Intn(len(peers.Peers))
-					// retrive missing packet from a random peer
 
+					// retrive missing packet from a random peer
 					gp := hClient.DownloadPacket(peers.Peers[r].PeerId, mp)
-					if gp != nil {
-						dm.Data.SaveOrderedPacket(*gp)
-					} else if try > 0 {
-						try--
-						goto download
-					} else {
-						fmt.Println("Missing packet not downloaded -", mp)
-					}
 					c.Disconnect()
 					can()
+					if gp != nil {
+						dm.Data.SaveOrderedPacket(*gp)
+						dm.Info("Saved missing packet ", "id", mp)
+						break
+					} else {
+						dm.Error("Cannot retrieve missing packet ", "id", mp)
+					}
 				}
 			}
 
 		}
-
 	}()
 }
 func main() {
@@ -495,11 +551,16 @@ func main() {
 	defer jp.Shutdown(ctx)
 	defer jp2.Shutdown(ctx)
 
-	<-time.After(10 * time.Second)
+	<-time.After(1 * time.Second)
 	fmt.Println("SENDING GOSSIP")
 	go gm1.gsp.SendGossip("nice")
-	<-time.After(10 * time.Second)
+	<-time.After(5 * time.Second)
 	fmt.Println("LastSnapshotHash - ", dm2.sm.LastSnapshotHash)
+
+	<-time.After(1 * time.Second)
+	fmt.Println("SENDING GOSSIP")
+	go gm1.gsp.SendGossip("nice22222")
+	<-time.After(5 * time.Second)
 	//utils.PrintJson(eng)
 	//utils.PrintJson(dm)
 	//utils.PrintJson(sm)
