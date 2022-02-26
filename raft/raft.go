@@ -190,7 +190,6 @@ func (r *raft) waitOnHbs() {
 }
 
 func (r *raft) follow(l peer.Peer) {
-	r.Info("Following " + fmt.Sprintf("%v", l))
 	r.currentLeader = &l
 	if r.rmode == 0 {
 		r.setTerm(l.RaftTerm)
@@ -198,7 +197,7 @@ func (r *raft) follow(l peer.Peer) {
 		r.setTerm(l.SyncTerm)
 	}
 	r.self.Mode = peer.FOLLOWER
-	r.Info("Followed" + r.details() + "\n")
+	r.Info("Following...\n" + r.details() + "\n")
 }
 func (r *raft) details() string {
 	dt := fmt.Sprintf("[SELF %s]\n[LEADER %s]", r.self.Details(), r.currentLeader.Details())

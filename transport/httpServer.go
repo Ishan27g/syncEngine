@@ -26,7 +26,8 @@ type HttpSrv struct {
 	httpSrv          *http.Server
 	dataFile         string
 	State            func() *peer.State
-	NewFollower      func(peer peer.Peer)
+	NewZoneFollower  func(peer peer.Peer)
+	NewSyncFollower  func(peer peer.Peer)
 	HbFromZoneLeader func(peer peer.Peer)
 	HbFromSyncLeader func(peer peer.Peer)
 	SyncInitialOrder func() SyncRsp
@@ -39,8 +40,7 @@ func (h *HttpSrv) handlePing(c *gin.Context) {
 	span.AddEvent(utils.PrintJson(state))
 	c.JSON(200, state)
 }
-
-func (h *HttpSrv) handleFollowPing(c *gin.Context) {
+func (h *HttpSrv) handleSyncFollowPing(c *gin.Context) {
 	var from peer.Peer
 	err := c.BindJSON(&from)
 	if err != nil {
@@ -49,7 +49,24 @@ func (h *HttpSrv) handleFollowPing(c *gin.Context) {
 	}
 	// add follower
 	// add gossip peer
-	h.NewFollower(from)
+	h.NewSyncFollower(from)
+	// send state as response
+	state := *h.State()
+	span := trace.SpanFromContext(c.Request.Context())
+	span.AddEvent(utils.PrintJson(state))
+	c.JSON(200, state)
+}
+
+func (h *HttpSrv) handleZoneFollowPing(c *gin.Context) {
+	var from peer.Peer
+	err := c.BindJSON(&from)
+	if err != nil {
+		c.AbortWithStatus(400)
+		return
+	}
+	// add follower
+	// add gossip peer
+	h.NewZoneFollower(from)
 	// send state as response
 	state := *h.State()
 	span := trace.SpanFromContext(c.Request.Context())
@@ -136,9 +153,14 @@ func WithStateCb(cb func() *peer.State) HTTPCbs {
 		srv.State = cb
 	}
 }
-func WithFollowerCb(cb func(peer peer.Peer)) HTTPCbs {
+func WithRaftFollowerCb(cb func(peer peer.Peer)) HTTPCbs {
 	return func(srv *HttpSrv) {
-		srv.NewFollower = cb
+		srv.NewZoneFollower = cb
+	}
+}
+func WithSyncFollowerCb(cb func(peer peer.Peer)) HTTPCbs {
+	return func(srv *HttpSrv) {
+		srv.NewSyncFollower = cb
 	}
 }
 func WithZoneHbCb(cb func(peer peer.Peer)) HTTPCbs {
@@ -169,7 +191,8 @@ func WithSnapshotFile(datafile string) HTTPCbs {
 func NewHttpSrv(port string, tracerId string, cbs ...HTTPCbs) *HttpSrv {
 	h := &HttpSrv{
 		State:            nil,
-		NewFollower:      nil,
+		NewZoneFollower:  nil,
+		NewSyncFollower:  nil,
 		HbFromZoneLeader: nil,
 		HbFromSyncLeader: nil,
 	}
@@ -190,7 +213,8 @@ func NewHttpSrv(port string, tracerId string, cbs ...HTTPCbs) *HttpSrv {
 		c.JSON(http.StatusOK, nil)
 	})
 	g.Handle("GET", "/engine/whoAmI", h.handlePing)
-	g.Handle("POST", "/engine/whoAmI", h.handleFollowPing)
+	g.Handle("POST", "/engine/whoAmI", h.handleZoneFollowPing)
+	g.Handle("POST", "/engine/sync/whoAmI", h.handleSyncFollowPing)
 	g.Handle("POST", "/engine/follower/receiveHeartBeat", h.hbFromRaftLeader)
 	g.Handle("POST", "/engine/leader/syncLeader/HB", h.syncLeaderHb)
 	g.Handle("POST", "/engine/leader/syncEventsOrder", h.syncEventsOrder)

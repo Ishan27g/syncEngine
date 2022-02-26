@@ -27,6 +27,7 @@ type Engine struct {
 	Gossip *gossipW
 
 	zonePeers          []peer.Peer
+	syncPeers          []peer.Peer
 	zoneRaft           raft.Raft
 	hbFromRaftLeader   chan peer.Peer
 	votedForRaftLeader chan peer.Peer
@@ -36,7 +37,7 @@ type Engine struct {
 	votedForSyncLeader chan peer.Peer
 
 	hclog.Logger
-	hClient transport.HttpClient
+	HClient transport.HttpClient
 	jp      *provider.JaegerProvider
 }
 
@@ -52,10 +53,21 @@ func (e *Engine) State() *peer.State {
 	var syncLeader = peer.Peer{}
 	if e.syncRaft != nil {
 		syncLeader = e.syncRaft.GetLeader()
+		l := e.syncRaft.GetLeader()
+		if e.self.HttpAddr() == l.HttpAddr() {
+
+		}
+
 	}
 	return peer.GetState(*e.Self(), e.zoneRaft.GetLeader(), syncLeader)
 }
 func (e *Engine) Self() *peer.Peer {
+	if e.zoneRaft != nil {
+		e.self.RaftTerm = e.zoneRaft.GetLeader().RaftTerm
+	}
+	if e.syncRaft != nil {
+		e.self.SyncTerm = e.syncRaft.GetLeader().RaftTerm
+	}
 	return e.self
 }
 func (e *Engine) Start(ctx context.Context) {
@@ -65,11 +77,26 @@ func (e *Engine) Start(ctx context.Context) {
 		e.jp.Close()
 	}()
 }
+func (e *Engine) AddSyncFollower(peer peer.Peer) {
+	e.syncPeers = append(e.syncPeers, peer)
+	e.addGossipPeer(peer)
+}
+func (e *Engine) addGossipPeer(peer peer.Peer) {
+	e.Gossip.Gossip.Add(gossip.Peer{
+		UdpAddress:        peer.UdpAddr(),
+		ProcessIdentifier: peer.HttpAddr(),
+		Hop:               0,
+	})
+}
 func (e *Engine) AddFollower(peer peer.Peer) {
 	e.zonePeers = append(e.zonePeers, peer)
+	e.addGossipPeer(peer)
 }
 func (e *Engine) GetFollowers() []peer.Peer {
 	return e.zonePeers
+}
+func (e *Engine) GetSyncFollowers() []peer.Peer {
+	return e.syncPeers
 }
 func Init(self peer.Peer) *Engine {
 	dataFile := self.HttpPort + ".csv"
@@ -99,7 +126,7 @@ func Init(self peer.Peer) *Engine {
 	url := "http://localhost:14268/api/traces"
 
 	jp := provider.InitJaeger(context.Background(), tracerId, (*e.Self()).HttpPort, url)
-	e.hClient = transport.NewHttpClient((*e.Self()).HttpPort, jp.Get().Tracer(tracerId))
+	e.HClient = transport.NewHttpClient((*e.Self()).HttpPort, jp.Get().Tracer(tracerId))
 
 	var raftLeader peer.Peer
 	var syncLeader peer.Peer
@@ -112,7 +139,7 @@ func Init(self peer.Peer) *Engine {
 		raftLeader = *e.self
 
 		zoneLeaders := transport.DiscoverRaftLeaders(e.self.Zone)
-		rsp := e.hClient.FindAndFollowSyncLeader(zoneLeaders, *e.self)
+		rsp := e.HClient.FindAndFollowSyncLeader(zoneLeaders, *e.self)
 		if rsp != nil {
 			syncLeader = rsp.SyncLeader
 			e.Info("Discovered sync leader - " + utils.PrintJson(rsp))
@@ -124,7 +151,7 @@ func Init(self peer.Peer) *Engine {
 		}
 	default:
 		e.self.Mode = peer.FOLLOWER
-		rsp := e.hClient.FindAndFollowRaftLeader(peers, *e.self)
+		rsp := e.HClient.FindAndFollowRaftLeader(peers, *e.self)
 		if rsp != nil {
 			raftLeader = rsp.RaftLeader
 			syncLeader = rsp.SyncLeader
@@ -142,7 +169,7 @@ func Init(self peer.Peer) *Engine {
 		// only once, start zoneRaft hbs when elected as leader
 		startSync.Do(e.startSyncRaft(syncLeader, self))
 		// send hbs to followers
-		peers := e.hClient.SendZoneHeartBeat(self, e.zonePeers...)
+		peers := e.HClient.SendZoneHeartBeat(self, e.zonePeers...)
 		e.Info("sending zone Hb to followers-" + fmt.Sprintf("%v", peers))
 	})
 
@@ -153,8 +180,11 @@ func (e *Engine) BuildHttpCbs() []transport.HTTPCbs {
 		transport.WithStateCb(func() *peer.State {
 			return e.State()
 		}),
-		transport.WithFollowerCb(func(peer peer.Peer) {
+		transport.WithRaftFollowerCb(func(peer peer.Peer) {
 			e.AddFollower(peer)
+		}),
+		transport.WithSyncFollowerCb(func(peer peer.Peer) {
+			e.AddSyncFollower(peer)
 		}),
 		transport.WithZoneHbCb(func(peer peer.Peer) {
 			e.HbFromRaftLeader(peer)
@@ -171,7 +201,7 @@ func (e *Engine) BuildHttpCbs() []transport.HTTPCbs {
 func (e *Engine) startSyncRaft(syncLeader peer.Peer, self peer.Peer) func() {
 	return func() {
 		zoneLeaders := transport.DiscoverRaftLeaders(e.self.Zone)
-		rsp := e.hClient.FindAndFollowSyncLeader(zoneLeaders, *e.self)
+		rsp := e.HClient.FindAndFollowSyncLeader(zoneLeaders, *e.self)
 		fmt.Println(rsp)
 		if rsp != nil {
 			syncLeader = rsp.SyncLeader
@@ -193,7 +223,7 @@ func (e *Engine) syncHbs(self peer.Peer) func() {
 		for _, peer := range *leaders {
 			httpAddr = append(httpAddr, peer.HttpAddr())
 		}
-		e.hClient.SendSyncLeaderHb(self, httpAddr...)
+		e.HClient.SendSyncLeaderHb(self, httpAddr...)
 		e.Info("sending sync Hb to leaders-" + fmt.Sprintf("%v", httpAddr))
 	}
 }

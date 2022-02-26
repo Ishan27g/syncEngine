@@ -8,10 +8,15 @@ import (
 	"io/ioutil"
 	"math/rand"
 	"net/http"
+	"strconv"
+	"sync"
 	"time"
 
 	"github.com/Ishan27g/go-utils/mLogger"
+	gossip "github.com/Ishan27g/gossipProtocol"
 	"github.com/Ishan27g/syncEngine/peer"
+	"github.com/Ishan27g/syncEngine/snapshot"
+	"github.com/Ishan27g/vClock"
 	"github.com/hashicorp/go-hclog"
 	"go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp"
 	"go.opentelemetry.io/otel/attribute"
@@ -43,9 +48,18 @@ func stringJson(js interface{}) string {
 	}
 	return string(data)
 }
-func (hc *HttpClient) sendFollowPing(peerHost string, self peer.Peer) *peer.State {
+func (hc *HttpClient) sendFollowRaftPing(peerHost string, self peer.Peer) *peer.State {
 	url := peerHost + baseUrl + "/whoAmI"
-	fmt.Println("sending sendFollowPing to " + url)
+	fmt.Println("sending sendFollow raft Ping to " + url)
+	b, e := json.Marshal(&self)
+	if e != nil {
+		logger.Trace("Bad payload  " + e.Error())
+	}
+	return hc.sendHttp(url, "sendFollowPing", b)
+}
+func (hc *HttpClient) sendFollowSyncPing(peerHost string, self peer.Peer) *peer.State {
+	url := peerHost + baseUrl + "/sync/whoAmI"
+	fmt.Println("sending sendFollow sync Ping to " + url)
 	b, e := json.Marshal(&self)
 	if e != nil {
 		logger.Trace("Bad payload  " + e.Error())
@@ -78,7 +92,7 @@ func (hc *HttpClient) sendHttp(url string, spanName string, b []byte) *peer.Stat
 }
 func (hc *HttpClient) FindAndFollowRaftLeader(raftPeers *[]peer.Peer, self peer.Peer) *peer.State {
 	for _, peer := range *raftPeers {
-		if peerRsp := hc.sendFollowPing(peer.HttpAddr(), self); peerRsp != nil {
+		if peerRsp := hc.sendFollowRaftPing(peer.HttpAddr(), self); peerRsp != nil {
 			// if rsp from leader
 			if peerRsp.Self.HttpAddr() == peerRsp.RaftLeader.HttpAddr() {
 				return peerRsp
@@ -89,7 +103,7 @@ func (hc *HttpClient) FindAndFollowRaftLeader(raftPeers *[]peer.Peer, self peer.
 }
 func (hc *HttpClient) FindAndFollowSyncLeader(raftLeaders *[]peer.Peer, self peer.Peer) *peer.State {
 	for _, peer := range *raftLeaders {
-		if peerRsp := hc.sendFollowPing(peer.HttpAddr(), self); peerRsp != nil {
+		if peerRsp := hc.sendFollowSyncPing(peer.HttpAddr(), self); peerRsp != nil {
 			return peerRsp
 		}
 	}
@@ -199,4 +213,83 @@ func (hc *HttpClient) SendZoneHeartBeat(from peer.Peer, to ...peer.Peer) []*peer
 	}
 
 	return followers
+}
+func (hc *HttpClient) SendSyncRequest(leader string, initialEventOrder *[]vClock.Event, entries *[]snapshot.Entry, from peer.Peer) peer.Peer {
+	url := leader + baseUrl + "/leader/syncEventsOrder"
+	logger.Debug("sending syncRequest to " + url)
+	b, e := json.Marshal(&from)
+	if e != nil {
+		logger.Trace("Bad payload  " + e.Error())
+	}
+	req, err := http.NewRequest("POST", url, bytes.NewBuffer(b))
+	if err != nil {
+		logger.Trace("Bad request  " + err.Error())
+		return peer.Peer{}
+	}
+	req.Header.Set("Content-Type", "application/json; charset=UTF-8")
+	var sync SyncRsp
+	if rsp := hc.SendHttp(req, "getInitSyncOrder", traceData("Send Sync Request")); rsp != nil {
+		err := json.Unmarshal(rsp, &sync)
+		if err != nil {
+			fmt.Println(err.Error())
+			return peer.Peer{}
+		}
+		*initialEventOrder = sync.OrderedEvents
+		*entries = sync.Entries
+		return sync.SyncLeader
+	} else {
+		logger.Error("nil rsp for ", url)
+	}
+	return peer.Peer{}
+}
+func (hc *HttpClient) DownloadPacket(from, id string) *gossip.Packet {
+	url := from + baseUrl + "/packet/" + id
+	var packet gossip.Packet
+	req, err := http.NewRequest("GET", url, nil)
+	if err != nil {
+		logger.Error("Bad request  " + err.Error())
+		return nil
+	}
+	if rsp := hc.SendHttp(req, "Download-packet", traceData("Download packet : "+url)); rsp != nil {
+		err := json.Unmarshal(rsp, &packet)
+		if err != nil {
+			logger.Trace("Could not retrieved packet " + id)
+			return nil
+		}
+		logger.Trace("Retrieved packet " + packet.GetId())
+		return &packet
+	}
+	return nil
+}
+
+func (hc *HttpClient) SyncOrder(to string, sendOrder []vClock.Event) []vClock.Event {
+	url := to + baseUrl + "/leader/expectedOrder"
+	b, e := json.Marshal(&sendOrder)
+	if e != nil {
+		logger.Trace("Bad payload  " + e.Error())
+	}
+	req, err := http.NewRequest("POST", url, bytes.NewBuffer(b))
+	if err != nil {
+		logger.Trace("Bad request  " + err.Error())
+		return nil
+	}
+	req.Header.Set("Content-Type", "application/json; charset=UTF-8")
+	if rsp := hc.SendHttp(req, "sync expectedOrder", traceData(sendOrder)); rsp != nil {
+		var receivedOrder []vClock.Event
+		_ = json.Unmarshal(rsp, &receivedOrder)
+		return receivedOrder
+	}
+	return nil
+}
+func (hc *HttpClient) SendRoundNum(ctx context.Context, wg *sync.WaitGroup, roundNum int, to ...string) {
+	defer wg.Done()
+	for _, s := range to {
+		url := s + baseUrl + "/sync/round/" + strconv.Itoa(roundNum)
+		req, err := http.NewRequestWithContext(ctx, "GET", url, nil)
+		if err != nil {
+			logger.Trace("Bad request  " + err.Error())
+			return
+		}
+		hc.SendHttp(req, "sync-roundNum", traceData("Sync Round "+strconv.Itoa(roundNum)))
+	}
 }

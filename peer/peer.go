@@ -44,8 +44,8 @@ func (p *Peer) HttpAddr() string {
 }
 
 func (p *Peer) Details() string {
-	return fmt.Sprintf("[Zone-%d]-%s [HTTP %s][GRPC %s][UDP %s][%s] [RaftTerm-%d] [SyncTerm-%d]",
-		p.Zone, p.HostName, p.HttpPort, p.GrpcPort, p.UdpPort, p.Mode, p.RaftTerm, p.SyncTerm)
+	return fmt.Sprintf("%s[Zone-%d]-%s [HTTP %s][GRPC %s][UDP %s][%s] [RaftTerm-%d] [SyncTerm-%d]",
+		p.FakeName, p.Zone, p.HostName, p.HttpPort, p.GrpcPort, p.UdpPort, p.Mode, p.RaftTerm, p.SyncTerm)
 }
 
 func PeerFromMeta(data map[string]interface{}) Peer {
