@@ -79,18 +79,34 @@ func (g *gossipManager) Receive() gossip.Packet {
 }
 func (v *voteManager) RequestVotes(ctx context.Context, term *proto.Term) (*proto.Vote, error) {
 	vote := &proto.Vote{Elected: false}
-	if term.TermCount > int32(v.self().Term) {
+	if term.TermCount == -100 { // sync leader election
 		v.voted <- peer.Peer{
 			Zone:     int(term.Zone),
 			HostName: term.LeaderHostname,
 			HttpPort: term.LeaderHttpPort,
 			GrpcPort: term.LeaderGrpcPort,
 			UdpPort:  term.LeaderUdpPort,
-			Mode:     int(term.Mode),
-			Term:     int(term.TermCount),
+			Mode:     term.Mode,
+			RaftTerm: -1,
+			SyncTerm: int(term.TermCount),
 		}
 		vote.Elected = true
+	} else {
+		if term.TermCount > int32(v.self().RaftTerm) {
+			v.voted <- peer.Peer{
+				Zone:     int(term.Zone),
+				HostName: term.LeaderHostname,
+				HttpPort: term.LeaderHttpPort,
+				GrpcPort: term.LeaderGrpcPort,
+				UdpPort:  term.LeaderUdpPort,
+				Mode:     term.Mode,
+				RaftTerm: int(term.TermCount),
+				SyncTerm: -1,
+			}
+			vote.Elected = true
+		}
 	}
+
 	return vote, nil
 }
 
@@ -125,6 +141,8 @@ func Start(ctx context.Context, envFile string) (*engine.Engine, *snapshotManage
 	self, transport.RegistryUrl = peer.FromEnv(envFile)
 
 	eng := engine.Init(self)
+
+	mLogger.Apply(mLogger.Level(hclog.Trace), mLogger.Color(true))
 
 	sm := snapshotManager{
 		RoundNum:         0,
@@ -181,7 +199,6 @@ func Start(ctx context.Context, envFile string) (*engine.Engine, *snapshotManage
 	return eng, &sm, &dm, &gm, jp
 }
 func main() {
-	mLogger.Apply(mLogger.Level(hclog.Trace), mLogger.Color(true))
 
 	utils.MockRegistry()
 	ctx, can := context.WithCancel(context.Background())
@@ -207,6 +224,6 @@ func main() {
 
 	fmt.Println(eng.State())
 	fmt.Println(eng2.State())
-	<-time.After(10 * time.Second)
+	<-make(chan bool)
 
 }

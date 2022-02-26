@@ -33,6 +33,104 @@ type HttpSrv struct {
 	GetPacket        func(id string) *gossip.Packet
 }
 
+func (h *HttpSrv) handlePing(c *gin.Context) {
+	state := *h.State()
+	span := trace.SpanFromContext(c.Request.Context())
+	span.AddEvent(utils.PrintJson(state))
+	c.JSON(200, state)
+}
+
+func (h *HttpSrv) handleFollowPing(c *gin.Context) {
+	var from peer.Peer
+	err := c.BindJSON(&from)
+	if err != nil {
+		c.AbortWithStatus(400)
+		return
+	}
+	// add follower
+	// add gossip peer
+	h.NewFollower(from)
+	// send state as response
+	state := *h.State()
+	span := trace.SpanFromContext(c.Request.Context())
+	span.AddEvent(utils.PrintJson(state))
+	c.JSON(200, state)
+}
+
+func (h *HttpSrv) hbFromRaftLeader(c *gin.Context) {
+	state := *h.State()
+	utils.PrintJson(state)
+	// send to channel
+	var from peer.Peer
+	err := c.BindJSON(&from)
+	if err != nil {
+		c.AbortWithStatus(400)
+		return
+	}
+	h.HbFromZoneLeader(from)
+	// send state as response
+
+	span := trace.SpanFromContext(c.Request.Context())
+	span.AddEvent(utils.PrintJson(state))
+	c.JSON(200, state)
+}
+
+func (h *HttpSrv) syncEventsOrder(c *gin.Context) {
+	sync := h.SyncInitialOrder()
+	span := trace.SpanFromContext(c.Request.Context())
+	span.AddEvent(utils.PrintJson(sync))
+	c.JSON(http.StatusOK, sync)
+}
+
+func (h *HttpSrv) sendSnapshot(c *gin.Context) {
+	snap := snapshot.FromFile(h.dataFile).Get()
+	span := trace.SpanFromContext(c.Request.Context())
+	span.AddEvent(utils.PrintJson(snap))
+	c.JSON(http.StatusOK, snap)
+}
+
+func (h *HttpSrv) sendPacket(c *gin.Context) {
+	rsp := h.GetPacket(c.Param("id"))
+	if rsp == nil {
+		c.AbortWithStatus(400)
+		return
+	}
+	span := trace.SpanFromContext(c.Request.Context())
+	span.AddEvent(utils.PrintJson(*rsp))
+	c.JSON(http.StatusOK, *rsp)
+}
+func (h *HttpSrv) syncLeaderHb(c *gin.Context) {
+	// send to channel
+	var from peer.Peer
+	err := c.BindJSON(&from)
+	if err != nil {
+		c.AbortWithStatus(400)
+		return
+	}
+	h.HbFromSyncLeader(from)
+	// send state as response
+	state := *h.State()
+	c.JSON(200, state)
+}
+
+func (h *HttpSrv) Start(ctx context.Context) {
+	go func() {
+		go func() {
+			fmt.Println("HTTP started on " + h.httpSrv.Addr)
+			if err := h.httpSrv.ListenAndServe(); err != nil && err != http.ErrServerClosed {
+				fmt.Println("HTTP", err.Error())
+			}
+		}()
+		<-ctx.Done()
+		cx, can := context.WithTimeout(ctx, 2*time.Second)
+		defer can()
+		if err := h.httpSrv.Shutdown(cx); err != nil {
+			fmt.Println("Http-Shutdown " + err.Error())
+		}
+	}()
+
+}
+
 func WithStateCb(cb func() *peer.State) HTTPCbs {
 	return func(srv *HttpSrv) {
 		srv.State = cb
@@ -101,101 +199,5 @@ func NewHttpSrv(port string, tracerId string, cbs ...HTTPCbs) *HttpSrv {
 	httpSrv.Handler = g
 	h.httpSrv = httpSrv
 	return h
-
-}
-
-func (h *HttpSrv) handlePing(c *gin.Context) {
-	state := *h.State()
-	span := trace.SpanFromContext(c.Request.Context())
-	span.AddEvent(utils.PrintJson(state))
-	c.JSON(200, state)
-}
-
-func (h *HttpSrv) handleFollowPing(c *gin.Context) {
-	var from peer.Peer
-	err := c.BindJSON(&from)
-	if err != nil {
-		c.AbortWithStatus(400)
-		return
-	}
-	// add follower
-	// add gossip peer
-	h.NewFollower(from)
-	// send state as response
-	state := *h.State()
-	span := trace.SpanFromContext(c.Request.Context())
-	span.AddEvent(utils.PrintJson(state))
-	c.JSON(200, state)
-}
-
-func (h *HttpSrv) hbFromRaftLeader(c *gin.Context) {
-	// send to channel
-	var from peer.Peer
-	err := c.BindJSON(&from)
-	if err != nil {
-		c.AbortWithStatus(400)
-		return
-	}
-	h.HbFromZoneLeader(from)
-	// send state as response
-	state := *h.State()
-	span := trace.SpanFromContext(c.Request.Context())
-	span.AddEvent(utils.PrintJson(state))
-	c.JSON(200, state)
-}
-
-func (h *HttpSrv) syncEventsOrder(c *gin.Context) {
-	sync := h.SyncInitialOrder()
-	span := trace.SpanFromContext(c.Request.Context())
-	span.AddEvent(utils.PrintJson(sync))
-	c.JSON(http.StatusOK, sync)
-}
-
-func (h *HttpSrv) sendSnapshot(c *gin.Context) {
-	snap := snapshot.FromFile(h.dataFile).Get()
-	span := trace.SpanFromContext(c.Request.Context())
-	span.AddEvent(utils.PrintJson(snap))
-	c.JSON(http.StatusOK, snap)
-}
-
-func (h *HttpSrv) sendPacket(c *gin.Context) {
-	rsp := h.GetPacket(c.Param("id"))
-	if rsp == nil {
-		c.AbortWithStatus(400)
-		return
-	}
-	span := trace.SpanFromContext(c.Request.Context())
-	span.AddEvent(utils.PrintJson(*rsp))
-	c.JSON(http.StatusOK, *rsp)
-}
-func (h *HttpSrv) syncLeaderHb(c *gin.Context) {
-	// send to channel
-	var from peer.Peer
-	err := c.BindJSON(&from)
-	if err != nil {
-		c.AbortWithStatus(400)
-		return
-	}
-	h.HbFromSyncLeader(from)
-	// send state as response
-	state := *h.State()
-	c.JSON(200, state)
-}
-
-func (h *HttpSrv) Start(ctx context.Context) {
-	go func() {
-		go func() {
-			fmt.Println("HTTP started on " + h.httpSrv.Addr)
-			if err := h.httpSrv.ListenAndServe(); err != nil && err != http.ErrServerClosed {
-				fmt.Println("HTTP", err.Error())
-			}
-		}()
-		<-ctx.Done()
-		cx, can := context.WithTimeout(ctx, 2*time.Second)
-		defer can()
-		if err := h.httpSrv.Shutdown(cx); err != nil {
-			fmt.Println("Http-Shutdown " + err.Error())
-		}
-	}()
 
 }

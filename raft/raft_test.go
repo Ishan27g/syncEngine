@@ -48,7 +48,7 @@ func mockHbToFollower(self peer.Peer, to ...chan peer.Peer) func() {
 }
 
 func runLeader(self peer.Peer, mockHbsFromLeader func()) Raft {
-	lraft := InitRaft(nil, nil, self, &self, mockHbsFromLeader)
+	lraft := InitRaft(0, nil, nil, self, &self, mockHbsFromLeader)
 	lraft.Start()
 	return lraft
 }
@@ -56,7 +56,7 @@ func runFollowers(leader peer.Peer, followers []peer.Peer, fHbFromLeader ...chan
 	var f []Raft
 	for i, follower := range followers {
 		fBvoted := make(chan peer.Peer)
-		fAraft := InitRaft(fBvoted, fHbFromLeader[i], follower, &leader, nil)
+		fAraft := InitRaft(0, fBvoted, fHbFromLeader[i], follower, &leader, nil)
 		f = append(f, fAraft)
 		fAraft.Start()
 	}
@@ -65,6 +65,7 @@ func runFollowers(leader peer.Peer, followers []peer.Peer, fHbFromLeader ...chan
 
 func generate(leaderEnvFile string, followerEnvFile ...string) (leaderEnv peer.Peer, followerState []peer.Peer) {
 	l := peer.InitEnv(envDir() + leaderEnvFile)
+	l.Self.RaftTerm = 1
 	var fs []peer.Peer
 	for _, s := range followerEnvFile {
 		fEnv := peer.InitEnv(envDir() + s)
@@ -78,12 +79,12 @@ func Test_NoLeader(t *testing.T) {
 	leaderState, followerState := generate("/2.leader.env", followerEnv...)
 
 	// fun follower without any leader
-	follower := InitRaft(nil, make(chan peer.Peer), followerState[0], &leaderState, mockHbToFollower(followerState[0]))
+	follower := InitRaft(0, nil, make(chan peer.Peer), followerState[0], &leaderState, mockHbToFollower(followerState[0]))
 	follower.Start()
 	<-time.After(12 * time.Second)
-	// should become leader
+	// should become leader with increased term
 	assert.True(t, follower.IsLeader())
-	assert.Equal(t, 1, follower.GetTerm())
+	assert.Equal(t, 2, follower.GetTerm())
 
 }
 func Test_LeaderHbsFollowers(t *testing.T) {
@@ -91,7 +92,7 @@ func Test_LeaderHbsFollowers(t *testing.T) {
 	followerEnv := []string{"/1.follower.A.env", "/1.follower.B.env"}
 	leaderState, followerState := generate("/1.leader.env", followerEnv...)
 	leaderState.Mode = peer.LEADER
-	leaderState.Term = 10
+	leaderState.RaftTerm = 10
 
 	followerHbChans := mockHbAtFollower(len(followerEnv))
 	hbsFromLeader := mockHbToFollower(leaderState, followerHbChans...)

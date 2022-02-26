@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"strconv"
 
+	faker "github.com/bxcodec/faker/v3"
 	"github.com/joho/godotenv"
 )
 
@@ -44,13 +45,15 @@ func InitEnv(envFile string) *engineEnv {
 		e.Hostname = "localhost"
 	}
 	e.Self = Peer{
+		FakeName: faker.FirstName(),
 		Zone:     e.Zone,
 		HostName: e.Hostname,
 		HttpPort: ":" + e.HttpPort,
 		GrpcPort: ":" + e.GrpcPort,
 		UdpPort:  e.UdpPort,
 		Mode:     FOLLOWER,
-		Term:     0,
+		RaftTerm: -1,
+		SyncTerm: -1,
 	}
 	return &e
 }

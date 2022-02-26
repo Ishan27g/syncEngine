@@ -15,7 +15,6 @@ import (
 )
 
 type JaegerProvider struct {
-	ctx context.Context
 	*tracesdk.TracerProvider
 }
 
@@ -39,13 +38,12 @@ func InitJaeger(ctx context.Context, app, service, url string) *JaegerProvider {
 		propagation.TraceContext{}, propagation.Baggage{}))
 
 	return &JaegerProvider{
-		ctx,
 		tp,
 	}
 }
 
 func (j *JaegerProvider) Close() {
-	ctx, cancel := context.WithCancel(j.ctx)
+	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 	defer func(ctx context.Context) {
 		ctx, cancel = context.WithTimeout(ctx, time.Second*5)

@@ -7,6 +7,7 @@ require (
 	github.com/Ishan27g/gossipProtocol v0.0.0-20220221134317-836c1cd7f219
 	github.com/Ishan27g/vClock v0.0.0-20220221133617-fae27884de39
 	github.com/Ishan27gOrg/registry/golang/registry v0.0.0-00010101000000-000000000000
+	github.com/bxcodec/faker/v3 v3.7.0
 	github.com/emirpasic/gods v1.12.0
 	github.com/gin-gonic/gin v1.7.7
 	github.com/hashicorp/go-hclog v1.1.0

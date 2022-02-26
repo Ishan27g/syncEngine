@@ -13,10 +13,13 @@ import (
 	"github.com/hashicorp/go-hclog"
 )
 
+const Monitor_Timeout = 5 * time.Second
+const Hb_Timeout = 3 * time.Second
+
 type Raft interface {
 	Start()
 	Details() string
-	GetState() int
+	GetState() string
 	GetTerm() int
 	GetLeader() peer.Peer
 	IsLeader() bool
@@ -25,9 +28,9 @@ type raft struct {
 	hbFromLeader   chan peer.Peer
 	votedForLeader chan peer.Peer
 
-	currentLeader *peer.Peer
-	self          peer.Peer
-
+	currentLeader     *peer.Peer
+	self              peer.Peer
+	rmode             int
 	sendHbToFollowers func()
 	hclog.Logger
 }
@@ -36,12 +39,25 @@ func (r *raft) Details() string {
 	return r.details()
 }
 
-func (r *raft) GetState() int {
+func (r *raft) GetState() string {
 	return r.self.Mode
+}
+func (r *raft) getTerm() int {
+	if r.rmode == 0 {
+		return r.self.RaftTerm
+	}
+	return r.self.SyncTerm
+}
+func (r *raft) setTerm(term int) {
+	if r.rmode == 0 {
+		r.self.RaftTerm = term
+	} else {
+		r.self.SyncTerm = term
+	}
 }
 
 func (r *raft) GetTerm() int {
-	return r.self.Term
+	return r.getTerm()
 }
 
 func (r *raft) GetLeader() peer.Peer {
@@ -55,7 +71,7 @@ func (r *raft) IsLeader() bool {
 // InitRaft starts raft according to self.Mode
 // if follower ->  monitors votedForLeader & hbFromLeader channels, starts election on timeout
 // if leader -> actionWhenLeader is called repeatedly after timeout
-func InitRaft(votedForLeader chan peer.Peer, hbFromLeader chan peer.Peer, self peer.Peer, leader *peer.Peer, actionWhenLeader func()) Raft {
+func InitRaft(mode int, votedForLeader chan peer.Peer, hbFromLeader chan peer.Peer, self peer.Peer, leader *peer.Peer, actionWhenLeader func()) Raft {
 
 	r := raft{
 		currentLeader:     leader,
@@ -84,7 +100,7 @@ func (r *raft) Start() {
 }
 func (r *raft) tryElection() bool {
 	r.self.Mode = peer.CANDIDATE
-	var termCount = r.self.Term + 1
+	var termCount = r.getTerm() + 1
 	grpcs := possiblePeers(r.self.Zone)
 	term := &proto.Term{
 		TermCount:      int32(termCount),
@@ -96,7 +112,7 @@ func (r *raft) tryElection() bool {
 	fmt.Println(voted)
 	if voted {
 		r.self.Mode = peer.LEADER
-		r.self.Term = termCount
+		r.setTerm(termCount)
 		r.currentLeader = &r.self
 	} else {
 		r.self.Mode = peer.FOLLOWER
@@ -143,10 +159,9 @@ func (r *raft) waitOnHbs() {
 		goto wait
 	wait:
 		{
-			<-time.After(5 * time.Second)
+			<-time.After(Monitor_Timeout)
 			select {
 			case l, ok := <-r.hbFromLeader:
-				r.Trace("received hb from leader")
 				if ok {
 					r.follow(l)
 					continue
@@ -177,7 +192,11 @@ func (r *raft) waitOnHbs() {
 func (r *raft) follow(l peer.Peer) {
 	r.Info("Following " + fmt.Sprintf("%v", l))
 	r.currentLeader = &l
-	r.self.Term = l.Term
+	if r.rmode == 0 {
+		r.setTerm(l.RaftTerm)
+	} else {
+		r.setTerm(l.SyncTerm)
+	}
 	r.self.Mode = peer.FOLLOWER
 	r.Info("Followed" + r.details() + "\n")
 }
@@ -190,7 +209,7 @@ func (r *raft) details() string {
 func (r *raft) sendHbs() {
 	r.currentLeader = &r.self
 	for {
-		<-time.After(2500 * time.Millisecond)
+		<-time.After(Hb_Timeout)
 		if r.self != *r.currentLeader {
 			r.Error(fmt.Sprintf("r.self != r.currentLeader - %v %v", r.self, r.currentLeader))
 			panic("invalid state")

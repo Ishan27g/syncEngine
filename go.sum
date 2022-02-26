@@ -9,6 +9,8 @@ github.com/Ishan27g/gossipProtocol v0.0.0-20220221134317-836c1cd7f219/go.mod h1:
 github.com/Ishan27g/vClock v0.0.0-20220221133617-fae27884de39 h1:IU17B2txeT0vAOvrr0D5bzj4eGOUsjqIqJsUG3IwBxI=
 github.com/Ishan27g/vClock v0.0.0-20220221133617-fae27884de39/go.mod h1:ei9rlINbpzjP97nfl2gmmhDPVtn/Lk42VnmqclOpIZg=
 github.com/antihax/optional v1.0.0/go.mod h1:uupD/76wgC+ih3iEmQUL+0Ugr19nfwCT1kdvxnR2qWY=
+github.com/bxcodec/faker/v3 v3.7.0 h1:qWAFFwcyVS0ukF0UoJju1wBLO0cuPQ7JdVBPggM8kNo=
+github.com/bxcodec/faker/v3 v3.7.0/go.mod h1:gF31YgnMSMKgkvl+fyEo1xuSMbEuieyqfeslGYFjneM=
 github.com/census-instrumentation/opencensus-proto v0.2.1/go.mod h1:f6KPmirojxKA12rnyqOA5BBL4O983OfeGPqjHWSTneU=
 github.com/cespare/xxhash/v2 v2.1.1/go.mod h1:VGX0DQ3Q6kWi7AoAeZDth3/j3BFtOZR5XLFGgcrjCOs=
 github.com/client9/misspell v0.3.4/go.mod h1:qj6jICC3Q7zFZvVWo7KLAzC3yx5G7kyvSDkc90ppPyw=

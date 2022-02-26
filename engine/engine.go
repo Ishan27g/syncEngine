@@ -42,9 +42,11 @@ type Engine struct {
 
 func (e *Engine) HbFromRaftLeader(from peer.Peer) {
 	e.hbFromRaftLeader <- from
+	e.self.RaftTerm = from.RaftTerm
 }
 func (e *Engine) HbFromSyncLeader(from peer.Peer) {
 	e.hbFromSyncLeader <- from
+	e.self.SyncTerm = from.SyncTerm
 }
 func (e *Engine) State() *peer.State {
 	var syncLeader = peer.Peer{}
@@ -102,9 +104,11 @@ func Init(self peer.Peer) *Engine {
 	var raftLeader peer.Peer
 	var syncLeader peer.Peer
 	peers := transport.Register(self)
+	fmt.Println("Peers - ", peers)
 	switch len(*peers) {
 	case 0:
 		e.self.Mode = peer.LEADER
+		e.self.RaftTerm = 1
 		raftLeader = *e.self
 
 		zoneLeaders := transport.DiscoverRaftLeaders(e.self.Zone)
@@ -113,6 +117,7 @@ func Init(self peer.Peer) *Engine {
 			syncLeader = rsp.SyncLeader
 			e.Info("Discovered sync leader - " + utils.PrintJson(rsp))
 		} else {
+			e.self.SyncTerm = 1
 			raftLeader = self
 			syncLeader = self
 			e.Info("Cannot discover raft & sync leaders, becoming both ")
@@ -123,7 +128,7 @@ func Init(self peer.Peer) *Engine {
 		if rsp != nil {
 			raftLeader = rsp.RaftLeader
 			syncLeader = rsp.SyncLeader
-			e.Info("Discovered raft & sync leaders - " + utils.PrintJson(rsp))
+			e.Info("Discovered raft & sync leaders - ") // + utils.PrintJson(rsp))
 		} else {
 			e.Error("Cannot discover raft leader")
 		}
@@ -133,7 +138,7 @@ func Init(self peer.Peer) *Engine {
 	// init raft for zone.
 	// if zoneLeader, send zone hbs & start syncRaft
 	// if follower, monitor zoneLeader hbs. Start syncRaft when elected as leader
-	e.zoneRaft = raft.InitRaft(e.votedForRaftLeader, e.hbFromRaftLeader, *e.self, &raftLeader, func() {
+	e.zoneRaft = raft.InitRaft(0, e.votedForRaftLeader, e.hbFromRaftLeader, *e.self, &raftLeader, func() {
 		// only once, start zoneRaft hbs when elected as leader
 		startSync.Do(e.startSyncRaft(syncLeader, self))
 		// send hbs to followers
@@ -174,7 +179,7 @@ func (e *Engine) startSyncRaft(syncLeader peer.Peer, self peer.Peer) func() {
 			e.Info("Becoming syncLeader for ", "zone", self.Zone)
 			syncLeader = *e.self
 		}
-		e.syncRaft = raft.InitRaft(e.votedForSyncLeader, e.hbFromSyncLeader, *e.self, &syncLeader, e.syncHbs(self))
+		e.syncRaft = raft.InitRaft(1, e.votedForSyncLeader, e.hbFromSyncLeader, *e.self, &syncLeader, e.syncHbs(self))
 		e.syncRaft.Start()
 	}
 }
