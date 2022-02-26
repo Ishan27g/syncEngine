@@ -50,7 +50,6 @@ func stringJson(js interface{}) string {
 }
 func (hc *HttpClient) sendFollowRaftPing(peerHost string, self peer.Peer) *peer.State {
 	url := peerHost + baseUrl + "/whoAmI"
-	fmt.Println("sending sendFollow raft Ping to " + url)
 	b, e := json.Marshal(&self)
 	if e != nil {
 		logger.Trace("Bad payload  " + e.Error())
@@ -59,7 +58,6 @@ func (hc *HttpClient) sendFollowRaftPing(peerHost string, self peer.Peer) *peer.
 }
 func (hc *HttpClient) sendFollowSyncPing(peerHost string, self peer.Peer) *peer.State {
 	url := peerHost + baseUrl + "/sync/whoAmI"
-	fmt.Println("sending sendFollow sync Ping to " + url)
 	b, e := json.Marshal(&self)
 	if e != nil {
 		logger.Trace("Bad payload  " + e.Error())
@@ -208,7 +206,7 @@ func (hc *HttpClient) SendZoneHeartBeat(from peer.Peer, to ...peer.Peer) []*peer
 	var followers []*peer.State
 	for _, p := range to {
 		url := p.HttpAddr() + baseUrl + "/follower/receiveHeartBeat"
-		logger.Debug("sending heartbeat to " + url)
+		//logger.Debug("sending heartbeat to " + url)
 		followers = append(followers, hc.sendHttp(url, "SendZoneHeartBeat", b))
 	}
 
@@ -216,7 +214,7 @@ func (hc *HttpClient) SendZoneHeartBeat(from peer.Peer, to ...peer.Peer) []*peer
 }
 func (hc *HttpClient) SendSyncRequest(leader string, initialEventOrder *[]vClock.Event, entries *[]snapshot.Entry, from peer.Peer) peer.Peer {
 	url := leader + baseUrl + "/leader/syncEventsOrder"
-	logger.Debug("sending syncRequest to " + url)
+	//logger.Debug("sending syncRequest to " + url)
 	b, e := json.Marshal(&from)
 	if e != nil {
 		logger.Trace("Bad payload  " + e.Error())

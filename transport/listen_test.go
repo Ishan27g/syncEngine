@@ -85,7 +85,7 @@ func TestNewRpcServer(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), timeout)
 	defer cancel()
 	srv.Start(ctx)
-	<-time.After(timeout)
+	<-time.After(timeout * 2)
 
 	// restart
 	ctx, cancel = context.WithTimeout(context.Background(), timeout)

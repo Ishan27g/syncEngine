@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"github.com/Ishan27g/syncEngine/peer"
+	"github.com/Ishan27g/syncEngine/provider"
 	"github.com/Ishan27g/syncEngine/transport"
 	registry "github.com/Ishan27gOrg/registry/golang/registry/package"
 	"github.com/stretchr/testify/assert"
@@ -17,25 +18,27 @@ func mockRegistry() {
 	go func() {
 		c := registry.Setup()
 		registry.Run("9999", c)
-
 	}()
 }
 func TestInit(t *testing.T) {
-	ctx, can := context.WithCancel(context.Background())
-	defer can()
 	mockRegistry()
 	<-time.After(2 * time.Second)
 	var self peer.Peer
 	self, transport.RegistryUrl = peer.FromEnv(envFile)
 
-	e := Init(self)
-	e.Start(ctx)
+	url := "http://localhost:14268/api/traces"
+	tracerId := self.HttpAddr()
+
+	jp := provider.InitJaeger(context.Background(), tracerId, self.HttpPort, url)
+	defer jp.Close()
+
+	hClient := transport.NewHttpClient(self.HttpPort, jp.Get().Tracer(tracerId))
+
+	e := Init(self, &hClient)
+	e.Start()
 
 	assert.NotEmpty(t, e.Self())
 	assert.NotEmpty(t, e.DataFile)
-
-	assert.NotEmpty(t, e.Gossip.Gossip)
-	assert.NotNil(t, e.Gossip.GossipRcv)
 
 	assert.NotEmpty(t, e.Logger)
 

@@ -71,9 +71,11 @@ func (r *raft) IsLeader() bool {
 // InitRaft starts raft according to self.Mode
 // if follower ->  monitors votedForLeader & hbFromLeader channels, starts election on timeout
 // if leader -> actionWhenLeader is called repeatedly after timeout
-func InitRaft(mode int, votedForLeader chan peer.Peer, hbFromLeader chan peer.Peer, self peer.Peer, leader *peer.Peer, actionWhenLeader func()) Raft {
+func InitRaft(mode int, votedForLeader chan peer.Peer, hbFromLeader chan peer.Peer, self peer.Peer,
+	leader *peer.Peer, actionWhenLeader func()) Raft {
 
 	r := raft{
+		rmode:             mode,
 		currentLeader:     leader,
 		self:              self,
 		hbFromLeader:      hbFromLeader,
@@ -102,12 +104,16 @@ func (r *raft) tryElection() bool {
 	r.self.Mode = peer.CANDIDATE
 	var termCount = r.getTerm() + 1
 	grpcs := possiblePeers(r.self.Zone)
+	if r.rmode == 1 { // syncLeader election
+		termCount = -100
+	}
 	term := &proto.Term{
 		TermCount:      int32(termCount),
 		LeaderHttpPort: r.self.HttpPort,
 		LeaderGrpcPort: r.self.GrpcPort,
 		LeaderHostname: r.self.GrpcPort,
 	}
+
 	voted := r.election(grpcs, term)
 	fmt.Println(voted)
 	if voted {
@@ -131,7 +137,7 @@ func possiblePeers(zone int) []string {
 func (r *raft) election(raftPeers []string, term *proto.Term) bool {
 
 	r.Warn("Requesting votes from peers  for term-" + strconv.Itoa(int(term.TermCount)))
-	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+	ctx, cancel := context.WithTimeout(context.Background(), 6*time.Second)
 	defer cancel()
 	votes := 0
 	for _, peer := range raftPeers {
@@ -154,7 +160,7 @@ func (r *raft) election(raftPeers []string, term *proto.Term) bool {
 // start election after failing to receive any
 func (r *raft) waitOnHbs() {
 	for {
-		r.Info("waiting on hbs")
+		//	r.Info("waiting on hbs")
 		try := 2
 		goto wait
 	wait:
@@ -162,12 +168,13 @@ func (r *raft) waitOnHbs() {
 			<-time.After(Monitor_Timeout)
 			select {
 			case l, ok := <-r.hbFromLeader:
+				//	r.Debug("Recieved HB")
 				if ok {
 					r.follow(l)
 					continue
 				}
 			case l, ok := <-r.votedForLeader:
-				r.Trace("voted For Leader")
+				//	r.Trace("voted For Leader")
 				if ok {
 					r.follow(l)
 					continue
@@ -197,7 +204,7 @@ func (r *raft) follow(l peer.Peer) {
 		r.setTerm(l.SyncTerm)
 	}
 	r.self.Mode = peer.FOLLOWER
-	r.Info("Following...\n" + r.details() + "\n")
+	//r.Info("Following...\n" + r.details() + "\n")
 }
 func (r *raft) details() string {
 	dt := fmt.Sprintf("[SELF %s]\n[LEADER %s]", r.self.Details(), r.currentLeader.Details())

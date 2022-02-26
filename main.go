@@ -43,7 +43,7 @@ type voteManager struct {
 	voted chan peer.Peer
 }
 type gossipManager struct {
-	gsp func() gossip.Gossip
+	gsp gossip.Gossip
 	rcv <-chan gossip.Packet
 }
 type snapshotManager struct {
@@ -155,7 +155,7 @@ func (d *dataManager) GetNetworkView(ctx context.Context, ok *proto.Ok) (*proto.
 }
 
 func (g *gossipManager) Gossip(data string) {
-	g.gsp().SendGossip(data)
+	g.gsp.SendGossip(data)
 }
 func (g *gossipManager) Receive() gossip.Packet {
 	return <-g.rcv
@@ -209,24 +209,43 @@ func getData(eng *engine.Engine, dm *dataManager) func() transport.SyncRsp {
 			}
 		}
 		order := dm.Events.GetOrder()
-		return transport.SyncRsp{
+		r := transport.SyncRsp{
 			OrderedEvents: order,
 			Entries:       entries,
 			SyncLeader:    *&eng.State().SyncLeader,
 		}
+		fmt.Println("Returning ", r)
+		return r
 	}
 }
 
-func Start(ctx context.Context, envFile string) (*engine.Engine, *snapshotManager, *dataManager, *gossipManager,
-	*provider.JaegerProvider) {
+func Start(ctx context.Context, envFile string) (*dataManager, *gossipManager, *provider.JaegerProvider) {
 
 	var self peer.Peer
 	self, transport.RegistryUrl = peer.FromEnv(envFile)
 
-	eng := engine.Init(self)
+	tracerId := self.HttpAddr()
+
+	url := "http://localhost:14268/api/traces"
+
+	jp := provider.InitJaeger(context.Background(), tracerId, self.HttpPort, url)
+	go func(ctx context.Context, jp *provider.JaegerProvider) {
+		<-ctx.Done()
+		jp.Close()
+	}(ctx, jp)
+
+	hClient := transport.NewHttpClient(self.HttpPort, jp.Get().Tracer(tracerId))
+
+	eng := engine.Init(self, &hClient)
+
+	gsp, gspRcv := gossip.Config(self.HostName, self.UdpPort, self.HttpAddr()) // id=availableAt for packet
 
 	mLogger.Apply(mLogger.Level(hclog.Trace), mLogger.Color(true))
 
+	gm := gossipManager{
+		gsp: gsp,
+		rcv: gspRcv,
+	}
 	vm := voteManager{self: func() *peer.Peer {
 		return eng.Self()
 	}, voted: make(chan peer.Peer)}
@@ -251,14 +270,23 @@ func Start(ctx context.Context, envFile string) (*engine.Engine, *snapshotManage
 		},
 	}
 
-	gm := gossipManager{
-		gsp: func() gossip.Gossip {
-			return eng.Gossip.Gossip
-		},
-		rcv: eng.Gossip.GossipRcv,
-	}
-
 	httpCbs := append(eng.BuildHttpCbs(), []transport.HTTPCbs{
+		transport.WithRaftFollowerCb(func(peer peer.Peer) {
+			eng.AddFollower(peer)
+			gm.gsp.Add(gossip.Peer{
+				UdpAddress:        peer.UdpAddr(),
+				ProcessIdentifier: peer.HttpAddr(),
+				Hop:               0,
+			})
+		}),
+		transport.WithSyncFollowerCb(func(peer peer.Peer) {
+			eng.AddSyncFollower(peer)
+			gm.gsp.Add(gossip.Peer{
+				UdpAddress:        peer.UdpAddr(),
+				ProcessIdentifier: peer.HttpAddr(),
+				Hop:               0,
+			})
+		}),
 		transport.WithSyncInitialOrderCb(getData(eng, &dm)),
 		transport.WithSnapshotFile(eng.DataFile),
 		transport.WithPacketCb(getPacket(&dm)),
@@ -270,39 +298,34 @@ func Start(ctx context.Context, envFile string) (*engine.Engine, *snapshotManage
 		transport.WithVotingServer(&vm),
 	}
 
-	tracerId := (*eng.Self()).HttpAddr()
-
-	url := "http://localhost:14268/api/traces"
-	jp := provider.InitJaeger(ctx, tracerId, (*eng.Self()).HttpPort, url)
-
 	rpcServer := transport.NewRpcServer(opts...)
 	httpServer := transport.NewHttpSrv(self.HttpPort, tracerId, httpCbs...)
 
 	rpcServer.Start(ctx)
 	httpServer.Start(ctx)
-	eng.Start(ctx)
+	eng.Start()
 
 	<-time.After(raft.Hb_Timeout * 2)
 	// sync Initial order
 	var initialEventOrder []vClock.Event // todo unused
 	var entries []snapshot.Entry
-	fmt.Println(!dm.isZoneLeader(), !dm.isSyncLeader())
+
 	if !dm.isZoneLeader() && !dm.isSyncLeader() { // follower
-		eng.HClient.SendSyncRequest(dm.state().RaftLeader.HttpAddr(), &initialEventOrder, &entries, dm.state().Self)
+		hClient.SendSyncRequest(dm.state().RaftLeader.HttpAddr(), &initialEventOrder, &entries, dm.state().Self)
 	} else if dm.isZoneLeader() && !dm.isSyncLeader() { // zoneLeader
-		eng.HClient.SendSyncRequest(dm.state().SyncLeader.HttpAddr(), &initialEventOrder, &entries, dm.state().Self)
+		hClient.SendSyncRequest(dm.state().SyncLeader.HttpAddr(), &initialEventOrder, &entries, dm.state().Self)
 	} else { // syncLeader
 		// first node in network
 	}
 	dm.sm.Sync(entries...)
 
-	dm.waitOnGossip(ctx, &gm, eng.HClient)
-	dm.waitOnMissingPackets(ctx, eng.HClient)
+	dm.waitOnGossip(ctx, &gm, &hClient)
+	dm.waitOnMissingPackets(ctx, &hClient)
+	dm.startRoundSync(ctx, &gm, &hClient)
 
-	startRoundSync(ctx, eng, &dm, &gm)
-	return eng, dm.sm, &dm, &gm, jp
+	return &dm, &gm, jp
 }
-func startRoundSync(ctx context.Context, eng *engine.Engine, dm *dataManager, gm *gossipManager) {
+func (dm *dataManager) startRoundSync(ctx context.Context, gm *gossipManager, hClient *transport.HttpClient) {
 	var syncDelay = 1200 * time.Millisecond
 
 	go func() {
@@ -320,9 +343,9 @@ func startRoundSync(ctx context.Context, eng *engine.Engine, dm *dataManager, gm
 					continue
 				}
 				// send current events to other leaders and merge with response,
-				otherLeaders := eng.GetSyncFollowers()
+				otherLeaders := dm.enginePeers()
 				for _, l := range otherLeaders {
-					returnedEventsUnordered := eng.HClient.SyncOrder(l.HttpAddr(), dm.Events.GetOrder())
+					returnedEventsUnordered := hClient.SyncOrder(l.HttpAddr(), dm.Events.GetOrder())
 					dm.Events.MergeEvents(returnedEventsUnordered...)
 				}
 
@@ -340,7 +363,7 @@ func startRoundSync(ctx context.Context, eng *engine.Engine, dm *dataManager, gm
 						c.Disconnect()
 					}(&wg, l)
 				}
-				for _, f := range eng.GetFollowers() {
+				for _, f := range dm.enginePeers() {
 					wg.Add(1)
 					go func(wg *sync.WaitGroup, f peer.Peer) {
 						c := transport.NewDataSyncClient(f.GrpcAddr())
@@ -366,12 +389,12 @@ func startRoundSync(ctx context.Context, eng *engine.Engine, dm *dataManager, gm
 				ctx1, cancel = context.WithDeadline(context.Background(), time.Now().Add(15*time.Second))
 				for _, l := range otherLeaders {
 					wg.Add(1)
-					go eng.HClient.SendRoundNum(ctx1, &wg, dm.sm.RoundNum, l.HttpAddr())
+					go hClient.SendRoundNum(ctx1, &wg, dm.sm.RoundNum, l.HttpAddr())
 
 				}
-				for _, f := range eng.GetFollowers() {
+				for _, f := range dm.enginePeers() {
 					wg.Add(1)
-					go eng.HClient.SendRoundNum(ctx1, &wg, dm.sm.RoundNum, f.HttpAddr())
+					go hClient.SendRoundNum(ctx1, &wg, dm.sm.RoundNum, f.HttpAddr())
 				}
 				wg.Wait()
 
@@ -379,12 +402,11 @@ func startRoundSync(ctx context.Context, eng *engine.Engine, dm *dataManager, gm
 				dm.Events.Reset()
 				cancel()
 
-				continue
 			}
 		}
 	}()
 }
-func (dm *dataManager) waitOnGossip(ctx context.Context, gm *gossipManager, hClient transport.HttpClient) {
+func (dm *dataManager) waitOnGossip(ctx context.Context, gm *gossipManager, hClient *transport.HttpClient) {
 	go func() {
 		for {
 			select {
@@ -393,11 +415,9 @@ func (dm *dataManager) waitOnGossip(ctx context.Context, gm *gossipManager, hCli
 			case gp := <-gm.rcv:
 				var leader string
 				if !dm.isZoneLeader() {
-					// todo
 					// send event to zoneLeader
 					leader = dm.state().RaftLeader.GrpcAddr()
 				} else {
-					// todo
 					// send to syncLeader
 					leader = dm.state().SyncLeader.GrpcAddr()
 				}
@@ -413,7 +433,7 @@ func (dm *dataManager) waitOnGossip(ctx context.Context, gm *gossipManager, hCli
 	}()
 }
 
-func (dm *dataManager) waitOnMissingPackets(ctx context.Context, hClient transport.HttpClient) {
+func (dm *dataManager) waitOnMissingPackets(ctx context.Context, hClient *transport.HttpClient) {
 	go func() {
 		for {
 			select {
@@ -468,14 +488,18 @@ func main() {
 	ctx, can := context.WithCancel(context.Background())
 	defer can()
 
-	eng, _, _, _, jp := Start(ctx, envFile)
+	dm1, gm1, jp := Start(ctx, envFile)
 
-	eng2, _, _, _, jp2 := Start(ctx, ".envFiles/1.follower.A.env")
+	dm2, _, jp2 := Start(ctx, ".envFiles/1.follower.A.env")
 
 	defer jp.Shutdown(ctx)
 	defer jp2.Shutdown(ctx)
 
 	<-time.After(10 * time.Second)
+	fmt.Println("SENDING GOSSIP")
+	go gm1.gsp.SendGossip("nice")
+	<-time.After(10 * time.Second)
+	fmt.Println("LastSnapshotHash - ", dm2.sm.LastSnapshotHash)
 	//utils.PrintJson(eng)
 	//utils.PrintJson(dm)
 	//utils.PrintJson(sm)
@@ -486,8 +510,8 @@ func main() {
 	//fmt.Println(gm)
 	//fmt.Println(gm2)
 
-	fmt.Println(eng.State())
-	fmt.Println(eng2.State())
+	fmt.Println(dm1.state())
+	fmt.Println(dm2.state())
 	<-make(chan bool)
 
 }
