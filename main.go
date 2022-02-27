@@ -1,9 +1,12 @@
 package main
 
 import (
+	"bufio"
 	"context"
 	"fmt"
 	"math/rand"
+	"os"
+	"strings"
 	"sync"
 	"time"
 
@@ -22,7 +25,7 @@ import (
 	"github.com/hashicorp/go-hclog"
 )
 
-var envFile = ".envFiles/1.leader.env"
+// var envFile = ".envFiles/1.leader.env"
 
 type dataManager struct {
 	vm data.VersionAbleI
@@ -60,6 +63,8 @@ func (d *dataManager) isZoneLeader() bool {
 	return d.state().RaftLeader.HttpAddr() == d.state().Self.HttpAddr()
 }
 func (d *dataManager) isSyncLeader() bool {
+	// d.Info("SyncLeader", "HttpAddr", d.state().SyncLeader.HttpAddr())
+	// d.Info("Self", "HttpAddr", d.state().Self.HttpAddr())
 	return d.state().SyncLeader.HttpAddr() == d.state().Self.HttpAddr()
 }
 func (d *dataManager) NewEvent(ctx context.Context, order *proto.Order) (*proto.Ok, error) {
@@ -116,10 +121,10 @@ func (d *dataManager) sendOrderToFollowers(order *proto.Order) {
 }
 func (d *dataManager) SaveOrder(ctx context.Context, order *proto.Order) (*proto.Ok, error) {
 	e := utils.OrderToEvents(order)
-	d.Info("Saving order " + utils.PrintJson(e))
+	//	d.Info("Saving order " + utils.PrintJson(e))
 	d.Events.MergeEvents(e...)
 	o := d.Events.GetOrderedIds()
-	d.Info("App order " + utils.PrintJson(e))
+	//	d.Info("App order " + utils.PrintJson(e))
 	d.Data.ApplyOrder(o)
 	orderHash := utils.DefaultHash(o)
 
@@ -261,7 +266,8 @@ func Start(ctx context.Context, envFile string) (*dataManager, *gossipManager, *
 		rcv: gspRcv,
 	}
 	vm := voteManager{self: func() *peer.Peer {
-		return eng.Self()
+		s := eng.Self()
+		return &s
 	}, voted: make(chan peer.Peer)}
 
 	dm := dataManager{
@@ -322,11 +328,13 @@ func Start(ctx context.Context, envFile string) (*dataManager, *gossipManager, *
 	rpcServer.Start(ctx)
 	httpServer.Start(ctx)
 	eng.Start()
+	<-time.After(raft.Hb_Timeout * 2)
+
+	dm.Info("started...", "isZoneLeader", dm.isZoneLeader(), "isSyncLeader", dm.isSyncLeader())
 
 	var p *proto.Peers
 	var gossipPeers []gossip.Peer
 
-	<-time.After(raft.Hb_Timeout * 2)
 	// sync Initial order
 	var initialEventOrder []vClock.Event // todo unused
 	var entries []snapshot.Entry
@@ -462,7 +470,7 @@ func (dm *dataManager) waitOnGossip(ctx context.Context, gm *gossipManager, hCli
 			case <-ctx.Done():
 				return
 			case gp := <-gm.rcv:
-				//dm.Info("Received gossip packet from network", "id", gp.GetId())
+				dm.Info("Received gossip packet from network", "id", gp.GetId())
 				var leader string
 				if !dm.isZoneLeader() {
 					// send event to zoneLeader
@@ -512,10 +520,12 @@ func (dm *dataManager) waitOnMissingPackets(ctx context.Context, hClient *transp
 					peers = append(peers, dm.state().SyncLeader.GrpcAddr())
 				}
 				// ask leader for peers where packet is available
+				fmt.Println(dm.state())
+				dm.Info("Asking for packet at", "peers", utils.PrintJson(peers))
 				for _, p := range peers {
 					c := transport.NewDataSyncClient(p)
 					ctx1, can := context.WithDeadline(context.Background(), time.Now().Add(10*time.Second))
-					dm.Info("Asking for packet at", "peer", p)
+					dm.Info("Asking for packet", "peer", p)
 					peers, _ := c.GetPacketAddresses(ctx1, &proto.Ok{Id: mp})
 					rand.Seed(time.Now().UnixMicro())
 					dm.Warn("Packet available at - " + utils.PrintJson(peers))
@@ -538,41 +548,73 @@ func (dm *dataManager) waitOnMissingPackets(ctx context.Context, hClient *transp
 		}
 	}()
 }
-func main() {
 
-	utils.MockRegistry()
+// func main() {
+
+// 	utils.MockRegistry()
+// 	ctx, can := context.WithCancel(context.Background())
+// 	defer can()
+
+// 	dm1, gm1, jp := Start(ctx, envFile)
+
+// 	dm2, _, jp2 := Start(ctx, ".envFiles/1.follower.A.env")
+
+// 	defer jp.Shutdown(ctx)
+// 	defer jp2.Shutdown(ctx)
+
+// 	<-time.After(1 * time.Second)
+// 	fmt.Println("SENDING GOSSIP")
+// 	go gm1.gsp.SendGossip("nice")
+// 	<-time.After(5 * time.Second)
+// 	fmt.Println("LastSnapshotHash - ", dm2.sm.LastSnapshotHash)
+
+// 	<-time.After(1 * time.Second)
+// 	fmt.Println("SENDING GOSSIP")
+// 	go gm1.gsp.SendGossip("nice22222")
+// 	<-time.After(5 * time.Second)
+// 	//utils.PrintJson(eng)
+// 	//utils.PrintJson(dm)
+// 	//utils.PrintJson(sm)
+// 	//utils.PrintJson(eng2)
+// 	//utils.PrintJson(dm2)
+// 	//utils.PrintJson(sm2)
+
+// 	//fmt.Println(gm)
+// 	//fmt.Println(gm2)
+
+// 	fmt.Println(dm1.state())
+// 	fmt.Println(dm2.state())
+// 	<-make(chan bool)
+
+// }
+func main() {
+	if len(os.Args) <= 1 {
+		fmt.Println("go run main.go envFile")
+		return
+	}
+	envFile := os.Args[1]
 	ctx, can := context.WithCancel(context.Background())
 	defer can()
 
 	dm1, gm1, jp := Start(ctx, envFile)
 
-	dm2, _, jp2 := Start(ctx, ".envFiles/1.follower.A.env")
-
 	defer jp.Shutdown(ctx)
-	defer jp2.Shutdown(ctx)
 
-	<-time.After(1 * time.Second)
-	fmt.Println("SENDING GOSSIP")
-	go gm1.gsp.SendGossip("nice")
-	<-time.After(5 * time.Second)
-	fmt.Println("LastSnapshotHash - ", dm2.sm.LastSnapshotHash)
-
-	<-time.After(1 * time.Second)
-	fmt.Println("SENDING GOSSIP")
-	go gm1.gsp.SendGossip("nice22222")
-	<-time.After(5 * time.Second)
-	//utils.PrintJson(eng)
-	//utils.PrintJson(dm)
-	//utils.PrintJson(sm)
-	//utils.PrintJson(eng2)
-	//utils.PrintJson(dm2)
-	//utils.PrintJson(sm2)
-
-	//fmt.Println(gm)
-	//fmt.Println(gm2)
-
-	fmt.Println(dm1.state())
-	fmt.Println(dm2.state())
+	reader := bufio.NewReader(os.Stdin)
+	for {
+		text, _ := reader.ReadString('\n')
+		text = strings.Replace(text, "\n", "", -1) // convert CRLF to LF
+		if strings.Compare("send", text) == 0 {
+			fmt.Println("Enter Data -\n\t$ ")
+			text, _ := reader.ReadString('\n')
+			text = strings.Replace(text, "\n", "", -1) // convert CRLF to LF
+			gm1.Gossip(text)
+		} else if strings.Compare("state", text) == 0 {
+			fmt.Println(utils.PrintJson(dm1.state()))
+		} else if strings.Compare("quit", text) == 0 {
+			break
+		}
+	}
 	<-make(chan bool)
 
 }

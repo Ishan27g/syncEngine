@@ -5,11 +5,8 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
-	"testing"
-	"time"
 
 	"github.com/Ishan27g/syncEngine/peer"
-	"github.com/stretchr/testify/assert"
 )
 
 var envDir = func() string {
@@ -72,41 +69,4 @@ func generate(leaderEnvFile string, followerEnvFile ...string) (leaderEnv peer.P
 		fs = append(fs, fEnv.Self)
 	}
 	return l.Self, fs
-}
-
-func Test_NoLeader(t *testing.T) {
-	followerEnv := []string{"/2.follower.A.env"}
-	leaderState, followerState := generate("/2.leader.env", followerEnv...)
-
-	// fun follower without any leader
-	follower := InitRaft(0, nil, make(chan peer.Peer), followerState[0], &leaderState, mockHbToFollower(followerState[0]))
-	follower.Start()
-	<-time.After(12 * time.Second)
-	// should become leader with increased term
-	assert.True(t, follower.IsLeader())
-	assert.Equal(t, 2, follower.GetTerm())
-
-}
-func Test_LeaderHbsFollowers(t *testing.T) {
-
-	followerEnv := []string{"/1.follower.A.env", "/1.follower.B.env"}
-	leaderState, followerState := generate("/1.leader.env", followerEnv...)
-	leaderState.Mode = peer.LEADER
-	leaderState.RaftTerm = 10
-
-	followerHbChans := mockHbAtFollower(len(followerEnv))
-	hbsFromLeader := mockHbToFollower(leaderState, followerHbChans...)
-	leader := runLeader(leaderState, hbsFromLeader)
-	followers := runFollowers(leaderState, followerState, followerHbChans...)
-
-	<-time.After(10 * time.Second)
-	assert.True(t, leader.IsLeader())
-	for _, follower := range followers {
-		fmt.Println(follower.Details())
-		assert.False(t, follower.IsLeader())
-		assert.Equal(t, leader.GetTerm(), follower.GetTerm())
-		assert.Equal(t, peer.FOLLOWER, follower.GetState())
-		assert.Equal(t, leader.GetLeader(), follower.GetLeader())
-	}
-
 }

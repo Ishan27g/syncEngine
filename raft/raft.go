@@ -28,7 +28,7 @@ type raft struct {
 	hbFromLeader   chan peer.Peer
 	votedForLeader chan peer.Peer
 
-	currentLeader     *peer.Peer
+	currentLeader     peer.Peer
 	self              peer.Peer
 	rmode             int
 	sendHbToFollowers func()
@@ -61,11 +61,11 @@ func (r *raft) GetTerm() int {
 }
 
 func (r *raft) GetLeader() peer.Peer {
-	return *r.currentLeader
+	return r.currentLeader
 }
 
 func (r *raft) IsLeader() bool {
-	return r.self == *r.currentLeader
+	return r.self == r.currentLeader
 }
 
 // InitRaft starts raft according to self.Mode
@@ -76,14 +76,18 @@ func InitRaft(mode int, votedForLeader chan peer.Peer, hbFromLeader chan peer.Pe
 
 	r := raft{
 		rmode:             mode,
-		currentLeader:     leader,
+		currentLeader:     peer.Peer{},
 		self:              self,
 		hbFromLeader:      hbFromLeader,
 		votedForLeader:    votedForLeader,
 		sendHbToFollowers: actionWhenLeader,
 		Logger:            mLogger.Get("Raft" + self.HttpAddr()),
 	}
-
+	if leader != nil {
+		var l peer.Peer
+		l = *leader
+		r.currentLeader = l
+	}
 	r.sendHbToFollowers = actionWhenLeader
 	return &r
 }
@@ -91,11 +95,11 @@ func InitRaft(mode int, votedForLeader chan peer.Peer, hbFromLeader chan peer.Pe
 func (r *raft) Start() {
 	switch r.self.Mode {
 	case peer.LEADER:
-		r.currentLeader = &r.self
+		r.currentLeader = r.self
 		go r.sendHbs()
 	default:
-		if r.currentLeader != nil {
-			r.follow(*r.currentLeader)
+		if r.currentLeader.FakeName == "" {
+			r.follow(r.currentLeader)
 		}
 		go r.waitOnHbs()
 	}
@@ -119,7 +123,7 @@ func (r *raft) tryElection() bool {
 	if voted {
 		r.self.Mode = peer.LEADER
 		r.setTerm(termCount)
-		r.currentLeader = &r.self
+		r.currentLeader = r.self
 	} else {
 		r.self.Mode = peer.FOLLOWER
 	}
@@ -161,14 +165,14 @@ func (r *raft) election(raftPeers []string, term *proto.Term) bool {
 func (r *raft) waitOnHbs() {
 	for {
 		//	r.Info("waiting on hbs")
-		try := 2
+		try := 1
 		goto wait
 	wait:
 		{
 			<-time.After(Monitor_Timeout)
 			select {
 			case l, ok := <-r.hbFromLeader:
-				//	r.Debug("Recieved HB")
+				//r.Debug("Recieved HB")
 				if ok {
 					r.follow(l)
 					continue
@@ -197,13 +201,13 @@ func (r *raft) waitOnHbs() {
 }
 
 func (r *raft) follow(l peer.Peer) {
-	r.currentLeader = &l
+	r.currentLeader = l
 	if r.rmode == 0 {
 		r.setTerm(l.RaftTerm)
 	} else {
 		r.setTerm(l.SyncTerm)
 	}
-	r.self.Mode = peer.FOLLOWER
+	// r.self.Mode = peer.FOLLOWER
 	//r.Info("Following...\n" + r.details() + "\n")
 }
 func (r *raft) details() string {
@@ -213,10 +217,10 @@ func (r *raft) details() string {
 
 // send heartbeats to followers
 func (r *raft) sendHbs() {
-	r.currentLeader = &r.self
+	r.currentLeader = r.self
 	for {
 		<-time.After(Hb_Timeout)
-		if r.self != *r.currentLeader {
+		if r.self != r.currentLeader {
 			r.Error(fmt.Sprintf("r.self != r.currentLeader - %v %v", r.self, r.currentLeader))
 			panic("invalid state")
 		}
