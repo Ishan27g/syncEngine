@@ -26,6 +26,7 @@ import (
 )
 
 // var envFile = ".envFiles/1.leader.env"
+const RoundResolution = 5 // or the num of messages per round ~ number of events that will be ordered
 
 type dataManager struct {
 	vm data.VersionAbleI
@@ -88,16 +89,10 @@ func (dm *dataManager) NewEvent(ctx context.Context, order *proto.Order) (*proto
 	return rsp, nil
 }
 func (dm *dataManager) saveSnapshot() {
-	o := dm.Data.GetOrderedPackets()
-	if len(o) == 0 {
+	if !dm.canSnapshot() {
 		return
 	}
-	entries := utils.OrderToEntries(o...)
-	// d.Info("Saving " + utils.PrintJson(entries))
-	if entries == nil || len(entries) == 0 {
-		dm.Info("Nothing to save in snapshot")
-		return
-	}
+	entries := utils.OrderToEntries(dm.Data.GetOrderedPackets()...)
 	currentHash := utils.DefaultHash(entries)
 	if dm.sm.LastSnapshotHash != currentHash {
 		dm.sm.Apply(entries...)
@@ -106,6 +101,18 @@ func (dm *dataManager) saveSnapshot() {
 		dm.Info("Saved snapshot")
 	}
 	dm.sm.LastSnapshotHash = currentHash
+}
+
+func (dm *dataManager) canSnapshot() bool {
+	if len(dm.Data.GetOrderedPackets()) == 0 {
+		return false
+	}
+	entries := utils.OrderToEntries(dm.Data.GetOrderedPackets()...)
+	if entries == nil || len(entries) == 0 {
+		dm.Info("Nothing to save in snapshot")
+		return false
+	}
+	return true
 }
 func (dm *dataManager) sendOrderToFollowers(order *proto.Order) {
 	if !dm.isZoneLeader() {
@@ -430,10 +437,12 @@ func (dm *dataManager) startRoundSync(ctx context.Context, gm *gossipManager, hC
 				//dm.Trace("syncLeader: Applying snapshot ... 2/4")
 
 				dm.Data.ApplyOrder(dm.Events.GetOrderedIds())
+				if !dm.canSnapshot() {
+					continue
+				}
 				dm.saveSnapshot()
 
 				// sync if new round
-				const RoundResolution = 5
 				if dm.round < RoundResolution {
 					dm.round++
 					//dm.Trace("syncLeader: in the same round ... 3/4 & 4/4")
