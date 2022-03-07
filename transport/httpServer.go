@@ -32,6 +32,7 @@ type HttpSrv struct {
 	HbFromSyncLeader func(peer peer.Peer)
 	SyncInitialOrder func() SyncRsp
 	GetPacket        func(id string) *gossip.Packet
+	SendGossip       func(data string)
 }
 
 func (h *HttpSrv) handlePing(c *gin.Context) {
@@ -148,6 +149,11 @@ func (h *HttpSrv) Start(ctx context.Context) {
 
 }
 
+func (h *HttpSrv) sendGossip(c *gin.Context) {
+	h.SendGossip(c.Param("data"))
+	c.Status(200)
+}
+
 func WithStateCb(cb func() *peer.State) HTTPCbs {
 	return func(srv *HttpSrv) {
 		srv.State = cb
@@ -188,14 +194,13 @@ func WithSnapshotFile(datafile string) HTTPCbs {
 		srv.dataFile = datafile
 	}
 }
-func NewHttpSrv(port string, tracerId string, cbs ...HTTPCbs) *HttpSrv {
-	h := &HttpSrv{
-		State:            nil,
-		NewZoneFollower:  nil,
-		NewSyncFollower:  nil,
-		HbFromZoneLeader: nil,
-		HbFromSyncLeader: nil,
+func WithGossipSend(cb func(data string)) HTTPCbs {
+	return func(srv *HttpSrv) {
+		srv.SendGossip = cb
 	}
+}
+func NewHttpSrv(port string, tracerId string, cbs ...HTTPCbs) *HttpSrv {
+	h := new(HttpSrv)
 	for _, cb := range cbs {
 		cb(h)
 	}
@@ -220,6 +225,7 @@ func NewHttpSrv(port string, tracerId string, cbs ...HTTPCbs) *HttpSrv {
 	g.Handle("POST", "/engine/leader/syncEventsOrder", h.syncEventsOrder)
 	g.Handle("GET", "/engine/packet/data", h.sendSnapshot)
 	g.Handle("GET", "/engine/packet/:id", h.sendPacket)
+	g.Handle("GET", "/engine/gossip/:data", h.sendGossip)
 	httpSrv.Handler = g
 	h.httpSrv = httpSrv
 	return h

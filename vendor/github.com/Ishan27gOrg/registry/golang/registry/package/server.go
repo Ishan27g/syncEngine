@@ -186,7 +186,7 @@ func (sh *serverHandler) reset(c *gin.Context) {
 
 // Run configures the http Run and handlers
 func Run(addr string, reg *registry) {
-	gin.SetMode(gin.ReleaseMode)
+//	gin.SetMode(gin.ReleaseMode)
 
 	sh = &serverHandler{
 		stop:   nil,

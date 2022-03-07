@@ -59,95 +59,95 @@ type snapshotManager struct {
 	LastSnapshotHash string
 }
 
-func (d *dataManager) isZoneLeader() bool {
-	return d.state().RaftLeader.HttpAddr() == d.state().Self.HttpAddr()
+func (dm *dataManager) isZoneLeader() bool {
+	return dm.state().RaftLeader.HttpAddr() == dm.state().Self.HttpAddr()
 }
-func (d *dataManager) isSyncLeader() bool {
+func (dm *dataManager) isSyncLeader() bool {
 	// d.Info("SyncLeader", "HttpAddr", d.state().SyncLeader.HttpAddr())
 	// d.Info("Self", "HttpAddr", d.state().Self.HttpAddr())
-	return d.state().SyncLeader.HttpAddr() == d.state().Self.HttpAddr()
+	return dm.state().SyncLeader.HttpAddr() == dm.state().Self.HttpAddr()
 }
-func (d *dataManager) NewEvent(ctx context.Context, order *proto.Order) (*proto.Ok, error) {
+func (dm *dataManager) NewEvent(ctx context.Context, order *proto.Order) (*proto.Ok, error) {
 	rsp := &proto.Ok{}
-	if !d.isZoneLeader() {
+	if !dm.isZoneLeader() {
 		return rsp, nil
 	}
 	var localEvents = new(data.Event)
-	if d.isSyncLeader() {
-		localEvents = &d.Events
+	if dm.isSyncLeader() {
+		localEvents = &dm.Events
 	} else {
-		localEvents = &d.Tmp // tmp events
+		localEvents = &dm.Tmp // tmp events
 	}
 	events := utils.OrderToEvents(order)
 	for _, event := range events {
-		if d.vm.GetVersion(event.EventId) == -1 {
+		if dm.vm.GetVersion(event.EventId) == -1 {
 			localEvents.MergeEvent(event.EventId, event.EventClock)
 		}
-		d.vm.UpdateVersion(event.EventId)
+		dm.vm.UpdateVersion(event.EventId)
 	}
 	return rsp, nil
 }
-func (d *dataManager) saveSnapshot() {
-	o := d.Data.GetOrderedPackets()
+func (dm *dataManager) saveSnapshot() {
+	o := dm.Data.GetOrderedPackets()
 	if len(o) == 0 {
 		return
 	}
 	entries := utils.OrderToEntries(o...)
 	// d.Info("Saving " + utils.PrintJson(entries))
 	if entries == nil || len(entries) == 0 {
-		d.Info("Nothing to save in snapshot")
+		dm.Info("Nothing to save in snapshot")
 		return
 	}
 	currentHash := utils.DefaultHash(entries)
-	if d.sm.LastSnapshotHash != currentHash {
-		d.sm.Apply(entries...)
-		fmt.Println(d.sm.Get())
-		d.sm.Save()
-		d.Info("Saved snapshot")
+	if dm.sm.LastSnapshotHash != currentHash {
+		dm.sm.Apply(entries...)
+		fmt.Println(dm.sm.Get())
+		dm.sm.Save()
+		dm.Info("Saved snapshot")
 	}
-	d.sm.LastSnapshotHash = currentHash
+	dm.sm.LastSnapshotHash = currentHash
 }
-func (d *dataManager) sendOrderToFollowers(order *proto.Order) {
-	if !d.isZoneLeader() {
+func (dm *dataManager) sendOrderToFollowers(order *proto.Order) {
+	if !dm.isZoneLeader() {
 		return
 	}
 	ctx, can := context.WithDeadline(context.Background(), time.Now().Add(10*time.Second))
 	defer can()
-	for _, f := range d.zonePeers() {
+	for _, f := range dm.zonePeers() {
 		c := transport.NewDataSyncClient(f.UdpAddr())
 		c.SaveOrder(ctx, order)
 		c.Disconnect()
 	}
 }
-func (d *dataManager) SaveOrder(ctx context.Context, order *proto.Order) (*proto.Ok, error) {
+func (dm *dataManager) SaveOrder(ctx context.Context, order *proto.Order) (*proto.Ok, error) {
 	e := utils.OrderToEvents(order)
 	//	d.Info("Saving order " + utils.PrintJson(e))
-	d.Events.MergeEvents(e...)
-	o := d.Events.GetOrderedIds()
+	dm.Events.MergeEvents(e...)
+	o := dm.Events.GetOrderedIds()
 	//	d.Info("App order " + utils.PrintJson(e))
-	d.Data.ApplyOrder(o)
+	dm.Data.ApplyOrder(o)
 	orderHash := utils.DefaultHash(o)
 
-	d.saveSnapshot()
+	dm.saveSnapshot()
 
-	if d.isZoneLeader() && !d.isSyncLeader() {
-		if d.LastOrderHash != orderHash {
-			d.sendOrderToFollowers(order)
-			d.Tmp.Reset()
-			d.LastOrderHash = orderHash
+	if dm.isZoneLeader() && !dm.isSyncLeader() {
+		if dm.LastOrderHash != orderHash {
+			dm.sendOrderToFollowers(order)
+			dm.Tmp.Reset()
+			dm.LastOrderHash = orderHash
 		}
 	}
 
 	return &proto.Ok{}, nil
 }
 
-func (d *dataManager) GetSyncData(ctx context.Context, ok *proto.Ok) (*proto.Order, error) {
-	o := d.Events.GetOrder()
+func (dm *dataManager) GetSyncData(ctx context.Context, ok *proto.Ok) (*proto.Order, error) {
+	o := dm.Events.GetOrder()
 	return utils.EventsToOrder(o), nil
 }
 
-func (d *dataManager) GetPacketAddresses(ctx context.Context, ok *proto.Ok) (*proto.Peers, error) {
-	atPeers := d.Data.GetPacketAvailableAt(ok.Id)
+func (dm *dataManager) GetPacketAddresses(ctx context.Context, ok *proto.Ok) (*proto.Peers, error) {
+	atPeers := dm.Data.GetPacketAvailableAt(ok.Id)
 	var peers []*proto.Peer
 	for _, p := range atPeers {
 		peers = append(peers, &proto.Peer{
@@ -158,8 +158,8 @@ func (d *dataManager) GetPacketAddresses(ctx context.Context, ok *proto.Ok) (*pr
 	return &proto.Peers{Peers: peers}, nil
 }
 
-func (d *dataManager) GetNetworkView(ctx context.Context, ok *proto.Ok) (*proto.Peers, error) {
-	if !d.isZoneLeader() || !d.isSyncLeader() {
+func (dm *dataManager) GetNetworkView(ctx context.Context, ok *proto.Ok) (*proto.Peers, error) {
+	if !dm.isZoneLeader() || !dm.isSyncLeader() {
 		return &proto.Peers{Peers: []*proto.Peer{}}, nil
 	}
 	gossipPeers := transport.RandomGossipPeers("")
@@ -174,7 +174,7 @@ func (d *dataManager) GetNetworkView(ctx context.Context, ok *proto.Ok) (*proto.
 }
 
 func (g *gossipManager) Gossip(data string) {
-	g.gsp.SendGossip(data)
+	go g.gsp.SendGossip(data)
 }
 func (g *gossipManager) Receive() gossip.Packet {
 	return <-g.rcv
@@ -314,6 +314,7 @@ func Start(ctx context.Context, envFile string) (*dataManager, *gossipManager, *
 		transport.WithSyncInitialOrderCb(getData(eng, &dm)),
 		transport.WithSnapshotFile(eng.DataFile),
 		transport.WithPacketCb(getPacket(&dm)),
+		transport.WithGossipSend(gm.Gossip),
 	}...)
 
 	opts := []transport.RpcOption{
