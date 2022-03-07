@@ -6,6 +6,13 @@ import (
 	"time"
 )
 
+type Manager struct {
+	RoundNum int
+	Count    int
+	SnapShot // interface to persist data to file
+
+	LastSnapshotHash string
+}
 type SnapShot interface {
 	// clear the current snapshot & file
 	clear()

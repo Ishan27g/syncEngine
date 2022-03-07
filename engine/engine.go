@@ -8,7 +8,6 @@ import (
 	gossip "github.com/Ishan27g/gossipProtocol"
 	"github.com/Ishan27g/syncEngine/peer"
 	"github.com/Ishan27g/syncEngine/provider"
-	"github.com/Ishan27g/syncEngine/raft"
 	"github.com/Ishan27g/syncEngine/transport"
 	"github.com/hashicorp/go-hclog"
 )
@@ -24,11 +23,11 @@ type Engine struct {
 
 	zonePeers          map[string]*peer.Peer
 	syncPeers          map[string]*peer.Peer
-	zoneRaft           raft.Raft
+	zoneRaft           Raft
 	hbFromRaftLeader   chan peer.Peer
 	votedForRaftLeader chan peer.Peer
 
-	syncRaft           raft.Raft
+	syncRaft           Raft
 	hbFromSyncLeader   chan peer.Peer
 	votedForSyncLeader chan peer.Peer
 
@@ -149,7 +148,7 @@ func Init(self peer.Peer, hClient *transport.HttpClient) *Engine {
 	// if syncLeader, send zone hbs & start syncRaft
 	// if zoneLeader & not syncLeader, send zone hbs & start syncRaft
 	// if follower, monitor zoneLeader hbs. Start syncRaft when elected as leader
-	e.zoneRaft = raft.InitRaft(0, e.votedForRaftLeader, e.hbFromRaftLeader, e.self, &raftLeader, func() {
+	e.zoneRaft = InitRaft(0, e.votedForRaftLeader, e.hbFromRaftLeader, e.self, &raftLeader, func() {
 		// only once, start zoneRaft hbs when elected as leader
 		startSync.Do(e.startSyncRaft(syncLeader))
 		// send hbs to followers
@@ -188,7 +187,7 @@ func (e *Engine) startSyncRaft(syncLeader peer.Peer) func() {
 		// 	syncLeader = e.self
 		// }
 		e.self.Mode = peer.FOLLOWER // syncMode follower
-		e.syncRaft = raft.InitRaft(1, e.votedForSyncLeader, e.hbFromSyncLeader, e.self, &syncLeader, e.syncHbs())
+		e.syncRaft = InitRaft(1, e.votedForSyncLeader, e.hbFromSyncLeader, e.self, &syncLeader, e.syncHbs())
 		e.self.Mode = peer.LEADER
 		go e.syncRaft.Start()
 	}
