@@ -10,7 +10,7 @@ import (
 	"github.com/Ishan27g/syncEngine/proto"
 	"github.com/Ishan27g/syncEngine/snapshot"
 	"github.com/Ishan27g/vClock"
-	registry "github.com/Ishan27gOrg/registry/golang/registry/package"
+	registry "github.com/Ishan27g/registry/golang/registry/package"
 )
 
 func PrintJson(js interface{}) string {

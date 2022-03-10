@@ -10,6 +10,9 @@ import (
 
 	"github.com/Ishan27g/go-utils/mLogger"
 	gossip "github.com/Ishan27g/gossipProtocol"
+	"github.com/Ishan27g/vClock"
+	"github.com/hashicorp/go-hclog"
+
 	"github.com/Ishan27g/syncEngine/data"
 	"github.com/Ishan27g/syncEngine/engine"
 	"github.com/Ishan27g/syncEngine/peer"
@@ -18,8 +21,6 @@ import (
 	"github.com/Ishan27g/syncEngine/snapshot"
 	"github.com/Ishan27g/syncEngine/transport"
 	"github.com/Ishan27g/syncEngine/utils"
-	"github.com/Ishan27g/vClock"
-	"github.com/hashicorp/go-hclog"
 )
 
 // var envFile = ".envFiles/1.leader.env"
@@ -27,6 +28,13 @@ const RoundResolution = 5 // or the num of messages per round ~ number of events
 
 func getData(eng *engine.Engine, dm *dataManager) func() transport.SyncRsp {
 	return func() transport.SyncRsp {
+		if dm.sm.RoundNum == 0 {
+			return transport.SyncRsp{
+				OrderedEvents: nil,
+				Entries:       nil,
+				SyncLeader:    *&eng.State().SyncLeader,
+			}
+		}
 		entries := snapshot.FromFile(eng.DataFile).Get()
 		dm.Warn("Snapshot read from file - " + utils.PrintJson(entries))
 		var ee []snapshot.Entry
@@ -49,6 +57,8 @@ func Start(ctx context.Context, envFile string) (*dataManager, *gossipManager, *
 
 	var self peer.Peer
 	self, transport.RegistryUrl = peer.FromEnv(envFile)
+
+	//self.GrpcPort = self.HttpPort
 
 	tracerId := self.HttpAddr()
 
@@ -121,6 +131,11 @@ func Start(ctx context.Context, envFile string) (*dataManager, *gossipManager, *
 		transport.WithSnapshotFile(eng.DataFile),
 		transport.WithPacketCb(getPacket(&dm)),
 		transport.WithGossipSend(gm.Gossip),
+		transport.WithRoundNumCb(func(roundNum int) {
+			dm.sm.RoundNum = roundNum
+			dm.sm.Round()
+			dm.Events.Reset()
+		}),
 	}...)
 
 	opts := []transport.RpcOption{
@@ -132,8 +147,10 @@ func Start(ctx context.Context, envFile string) (*dataManager, *gossipManager, *
 	rpcServer := transport.NewRpcServer(opts...)
 	httpServer := transport.NewHttpSrv(self.HttpPort, tracerId, httpCbs...)
 
-	rpcServer.Start(ctx)
-	httpServer.Start(ctx)
+	// go transport.Listen(ctx, rpcServer, httpServer)
+	rpcServer.Start(ctx, nil)
+	httpServer.Start(ctx, nil)
+
 	eng.Start()
 	<-time.After(engine.Hb_Timeout * 2)
 
@@ -149,12 +166,12 @@ func Start(ctx context.Context, envFile string) (*dataManager, *gossipManager, *
 	defer cancel()
 	if !dm.isZoneLeader() && !dm.isSyncLeader() { // follower
 		hClient.SendSyncRequest(dm.state().RaftLeader.HttpAddr(), &initialEventOrder, &entries, dm.state().Self)
-		c := transport.NewDataSyncClient(dm.state().RaftLeader.GrpcAddr())
+		c := transport.NewDataSyncClient(ctx1, dm.state().RaftLeader.GrpcAddr())
 		p, _ = c.GetNetworkView(ctx1, &proto.Ok{})
 
 	} else if dm.isZoneLeader() && !dm.isSyncLeader() { // zoneLeader
 		hClient.SendSyncRequest(dm.state().SyncLeader.HttpAddr(), &initialEventOrder, &entries, dm.state().Self)
-		c := transport.NewDataSyncClient(dm.state().SyncLeader.GrpcAddr())
+		c := transport.NewDataSyncClient(ctx1, dm.state().SyncLeader.GrpcAddr())
 		p, _ = c.GetNetworkView(ctx1, &proto.Ok{})
 	} else { // syncLeader
 		// first node in network

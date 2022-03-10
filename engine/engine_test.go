@@ -8,7 +8,7 @@ import (
 	"github.com/Ishan27g/syncEngine/peer"
 	"github.com/Ishan27g/syncEngine/provider"
 	"github.com/Ishan27g/syncEngine/transport"
-	registry "github.com/Ishan27gOrg/registry/golang/registry/package"
+	registry "github.com/Ishan27g/registry/golang/registry/package"
 	"github.com/stretchr/testify/assert"
 )
 

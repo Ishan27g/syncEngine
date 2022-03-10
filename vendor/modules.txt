@@ -4,12 +4,12 @@ github.com/Ishan27g/go-utils/mLogger
 # github.com/Ishan27g/gossipProtocol v0.0.0-20220221134317-836c1cd7f219
 ## explicit; go 1.17
 github.com/Ishan27g/gossipProtocol
+# github.com/Ishan27g/registry/golang/registry v0.0.0-20220221134523-b13bddd19368
+## explicit; go 1.17
+github.com/Ishan27g/registry/golang/registry/package
 # github.com/Ishan27g/vClock v0.0.0-20220221133617-fae27884de39
 ## explicit; go 1.17
 github.com/Ishan27g/vClock
-# github.com/Ishan27gOrg/registry/golang/registry v0.0.0-00010101000000-000000000000 => ../../Ishan27g/registry/golang/registry
-## explicit; go 1.17
-github.com/Ishan27gOrg/registry/golang/registry/package
 # github.com/bxcodec/faker/v3 v3.7.0
 ## explicit; go 1.12
 github.com/bxcodec/faker/v3
@@ -119,6 +119,9 @@ github.com/russross/blackfriday/v2
 # github.com/shurcooL/sanitized_anchor_name v1.0.0
 ## explicit
 github.com/shurcooL/sanitized_anchor_name
+# github.com/soheilhy/cmux v0.1.5
+## explicit; go 1.11
+github.com/soheilhy/cmux
 # github.com/stretchr/testify v1.7.0
 ## explicit; go 1.13
 github.com/stretchr/testify/assert
@@ -180,7 +183,7 @@ go.opentelemetry.io/otel/trace
 # golang.org/x/crypto v0.0.0-20200622213623-75b288015ac9
 ## explicit; go 1.11
 golang.org/x/crypto/sha3
-# golang.org/x/net v0.0.0-20200822124328-c89045814202
+# golang.org/x/net v0.0.0-20201202161906-c7110b5ffcbb
 ## explicit; go 1.11
 golang.org/x/net/http/httpguts
 golang.org/x/net/http2
@@ -195,8 +198,8 @@ golang.org/x/sys/internal/unsafeheader
 golang.org/x/sys/unix
 golang.org/x/sys/windows
 golang.org/x/sys/windows/registry
-# golang.org/x/text v0.3.2
-## explicit
+# golang.org/x/text v0.3.3
+## explicit; go 1.11
 golang.org/x/text/secure/bidirule
 golang.org/x/text/transform
 golang.org/x/text/unicode/bidi
@@ -289,4 +292,3 @@ gopkg.in/yaml.v2
 # gopkg.in/yaml.v3 v3.0.0-20200313102051-9f266ea9e77c
 ## explicit
 gopkg.in/yaml.v3
-# github.com/Ishan27gOrg/registry/golang/registry => ../../Ishan27g/registry/golang/registry

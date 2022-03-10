@@ -1,15 +1,15 @@
 package engine
 
 import (
-	"fmt"
 	"sync"
 
 	"github.com/Ishan27g/go-utils/mLogger"
 	gossip "github.com/Ishan27g/gossipProtocol"
+	"github.com/hashicorp/go-hclog"
+
 	"github.com/Ishan27g/syncEngine/peer"
 	"github.com/Ishan27g/syncEngine/provider"
 	"github.com/Ishan27g/syncEngine/transport"
-	"github.com/hashicorp/go-hclog"
 )
 
 type gossipW struct {
@@ -112,8 +112,8 @@ func Init(self peer.Peer, hClient *transport.HttpClient) *Engine {
 
 	var raftLeader peer.Peer
 	var syncLeader peer.Peer
+
 	peers := transport.Register(self)
-	fmt.Println("Peers - ", peers)
 	switch len(*peers) {
 	case 0:
 		e.self.Mode = peer.LEADER

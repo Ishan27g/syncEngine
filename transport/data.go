@@ -3,34 +3,28 @@ package transport
 import (
 	"context"
 	"fmt"
-	"time"
 
-	"github.com/Ishan27g/syncEngine/proto"
 	"go.opentelemetry.io/contrib/instrumentation/google.golang.org/grpc/otelgrpc"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials/insecure"
+
+	"github.com/Ishan27g/syncEngine/proto"
 )
 
 type DataSyncClient struct {
-	can context.CancelFunc
 	proto.DataSyncClient
 }
 
-func (dc *DataSyncClient) Disconnect() {
-	dc.can()
-}
-func NewDataSyncClient(serverAddress string) *DataSyncClient {
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+func NewDataSyncClient(ctx context.Context, serverAddress string) *DataSyncClient {
 	grpc.WaitForReady(true)
 	grpcClient, err := grpc.DialContext(ctx, serverAddress,
 		grpc.WithTransportCredentials(insecure.NewCredentials()),
 		grpc.WithUnaryInterceptor(otelgrpc.UnaryClientInterceptor()),
 		grpc.WithStreamInterceptor(otelgrpc.StreamClientInterceptor()))
 	if err != nil {
-		fmt.Println(err.Error())
-		cancel()
+		fmt.Println("Error connecting to grpc client-", err.Error())
 		return nil
 	}
-	vc := DataSyncClient{cancel, proto.NewDataSyncClient(grpcClient)}
+	vc := DataSyncClient{proto.NewDataSyncClient(grpcClient)}
 	return &vc
 }

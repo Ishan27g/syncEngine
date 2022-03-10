@@ -2,7 +2,6 @@ package snapshot
 
 import (
 	"fmt"
-	"os"
 	"time"
 )
 
@@ -117,7 +116,7 @@ func (s *snapShot) clear() {
 	s.saveCount = 0
 }
 func Empty(fileName string) SnapShot {
-	_ = os.Remove(fileName)
+	// _ = os.Remove(fileName)
 	snap := empty(fileName)
 	return snap
 }

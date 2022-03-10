@@ -4,7 +4,7 @@ import (
 	"fmt"
 	"strings"
 
-	_package "github.com/Ishan27gOrg/registry/golang/registry/package"
+	_package "github.com/Ishan27g/registry/golang/registry/package"
 )
 
 const (
@@ -48,7 +48,7 @@ func (p *Peer) Details() string {
 		p.FakeName, p.Zone, p.HostName, p.HttpPort, p.GrpcPort, p.UdpPort, p.Mode, p.RaftTerm, p.SyncTerm)
 }
 
-func PeerFromMeta(data map[string]interface{}) Peer {
+func FromMeta(data map[string]interface{}) Peer {
 	z := data["Zone"].(float64)
 	r := data["RaftTerm"].(float64)
 	s := data["SyncTerm"].(float64)
@@ -75,7 +75,7 @@ func TransformRegistryResponse(zonePeers _package.PeerResponse, self Peer) *[]Pe
 	peerMeta := zonePeers.GetPeerMeta()
 	for _, pe := range peerMeta {
 		pi := pe.(map[string]interface{})
-		p := PeerFromMeta(pi)
+		p := FromMeta(pi)
 		if p.HttpAddr() == self.HttpAddr() {
 			continue
 		}

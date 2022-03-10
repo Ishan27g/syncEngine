@@ -4,9 +4,10 @@ import (
 	"strings"
 
 	gossip "github.com/Ishan27g/gossipProtocol"
+
 	"github.com/Ishan27g/syncEngine/peer"
 
-	_package "github.com/Ishan27gOrg/registry/golang/registry/package"
+	_package "github.com/Ishan27g/registry/golang/registry/package"
 )
 
 var RegistryUrl string
@@ -18,7 +19,7 @@ func DiscoverRaftLeaders(exceptZone int) *[]peer.Peer {
 		if otherZone != exceptZone {
 			peers := _package.RegistryClient(RegistryUrl).GetZonePeers(otherZone)
 			for _, zonePeer := range peers {
-				l := peer.PeerFromMeta(zonePeer.MetaData.(map[string]interface{}))
+				l := peer.FromMeta(zonePeer.MetaData.(map[string]interface{}))
 				leaders = append(leaders, l)
 				break
 			}
@@ -44,7 +45,7 @@ func getAllPeersFromRegistry() map[int]_package.PeerResponse {
 func convertToGossipPeer(peers _package.PeerResponse, exclude string) []gossip.Peer {
 	var allPeers []gossip.Peer
 	for _, p := range peers {
-		e := peer.PeerFromMeta(p.MetaData.(map[string]interface{}))
+		e := peer.FromMeta(p.MetaData.(map[string]interface{}))
 		if exclude != "" && strings.Contains(exclude, e.UdpAddr()) {
 			continue
 		}

@@ -3,17 +3,20 @@ package transport
 import (
 	"context"
 	"fmt"
+	"net"
 	"net/http"
+	"strconv"
 	"time"
 
 	gossip "github.com/Ishan27g/gossipProtocol"
-	"github.com/Ishan27g/syncEngine/peer"
-	"github.com/Ishan27g/syncEngine/snapshot"
-	"github.com/Ishan27g/syncEngine/utils"
 	"github.com/Ishan27g/vClock"
 	"github.com/gin-gonic/gin"
 	"go.opentelemetry.io/contrib/instrumentation/github.com/gin-gonic/gin/otelgin"
 	"go.opentelemetry.io/otel/trace"
+
+	"github.com/Ishan27g/syncEngine/peer"
+	"github.com/Ishan27g/syncEngine/snapshot"
+	"github.com/Ishan27g/syncEngine/utils"
 )
 
 type HTTPCbs func(*HttpSrv)
@@ -33,6 +36,7 @@ type HttpSrv struct {
 	SyncInitialOrder func() SyncRsp
 	GetPacket        func(id string) *gossip.Packet
 	SendGossip       func(data string)
+	RoundNumCb       func(roundNum int)
 }
 
 func (h *HttpSrv) handlePing(c *gin.Context) {
@@ -131,9 +135,10 @@ func (h *HttpSrv) syncLeaderHb(c *gin.Context) {
 	c.JSON(200, state)
 }
 
-func (h *HttpSrv) Start(ctx context.Context) {
+func (h *HttpSrv) Start(ctx context.Context, listener net.Listener) {
 	go func() {
 		go func() {
+//			fmt.Println("HTTP started on " + listener.Addr().String())
 			fmt.Println("HTTP started on " + h.httpSrv.Addr)
 			if err := h.httpSrv.ListenAndServe(); err != nil && err != http.ErrServerClosed {
 				fmt.Println("HTTP", err.Error())
@@ -154,6 +159,22 @@ func (h *HttpSrv) sendGossip(c *gin.Context) {
 	c.Status(200)
 }
 
+func (h *HttpSrv) syncRoundNum(c *gin.Context) {
+	roundNum, err := strconv.Atoi(c.Param("num"))
+	fmt.Println("updating round num")
+	if err == nil{
+		h.RoundNumCb(roundNum)
+		c.String(200, "ok")
+		return
+	}
+	c.String(http.StatusBadRequest, "")
+}
+
+func WithRoundNumCb(cb func(roundNum int) ) HTTPCbs {
+	return func(srv *HttpSrv) {
+		srv.RoundNumCb = cb
+	}
+}
 func WithStateCb(cb func() *peer.State) HTTPCbs {
 	return func(srv *HttpSrv) {
 		srv.State = cb
@@ -220,6 +241,7 @@ func NewHttpSrv(port string, tracerId string, cbs ...HTTPCbs) *HttpSrv {
 	g.Handle("GET", "/engine/whoAmI", h.handlePing)
 	g.Handle("POST", "/engine/whoAmI", h.handleZoneFollowPing)
 	g.Handle("POST", "/engine/sync/whoAmI", h.handleSyncFollowPing)
+	g.Handle("GET", "/engine/sync/round/:num", h.syncRoundNum)
 	g.Handle("POST", "/engine/follower/receiveHeartBeat", h.hbFromRaftLeader)
 	g.Handle("POST", "/engine/leader/syncLeader/HB", h.syncLeaderHb)
 	g.Handle("POST", "/engine/leader/syncEventsOrder", h.syncEventsOrder)
