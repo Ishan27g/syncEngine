@@ -15,7 +15,7 @@ var defaultStrategy = PeerSamplingStrategy{
 	ViewSelectionStrategy:   Random,
 }
 
-const gossipDelay = 10 * time.Millisecond
+const gossipDelay = 1 * time.Millisecond
 const rounds = 1
 const fanOut = 5
 
@@ -24,7 +24,7 @@ type envConfig struct {
 	UdpPort           string `env:"UDP_PORT,required"`
 	ProcessIdentifier string
 	RoundDelay        time.Duration // timeout between each round for a gossipMessage
-	FanOut            int           // num of peers to startRounds a message to
+	FanOut            int           // num of peers to send a gossip message to
 }
 
 func defaultEnv(hostname string, port string, id string) *envConfig {

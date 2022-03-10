@@ -86,7 +86,7 @@ func (s *sampling) selectView(view *View) {
 }
 
 func (s *sampling) passive() {
-	wait := 5 * time.Second
+	wait := ViewExchangeDelay
 	for {
 		select {
 		case <-s.ctx.Done():
@@ -164,14 +164,14 @@ selectPeer:
 	if node.ProcessIdentifier == s.selfDescriptor.ProcessIdentifier {
 		goto selectPeer
 	}
-	if s.previousPeer.ProcessIdentifier == Peer(node).ProcessIdentifier && s.Size() != 1 {
+	if s.previousPeer.ProcessIdentifier == node.ProcessIdentifier && s.Size() != 1 {
 		goto selectPeer
 	}
-	if exclude.ProcessIdentifier == Peer(node).ProcessIdentifier && s.Size() != 1 {
+	if exclude.ProcessIdentifier == node.ProcessIdentifier && s.Size() != 1 {
 		goto selectPeer
 	}
 
-	s.previousPeer = Peer(node)
+	s.previousPeer = node
 	return s.previousPeer
 }
 

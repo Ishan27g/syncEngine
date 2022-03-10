@@ -16,8 +16,7 @@ type Gossip interface {
 	// SendGossip  to the network
 	SendGossip(data string)
 	// CurrentView returned as a String
-	// CurrentView() string
-
+	CurrentView() map[string]Peer
 }
 
 type gossip struct {
@@ -36,8 +35,8 @@ type gossip struct {
 	gossipToUser chan Packet
 }
 
-func (g *gossip) CurrentView() string {
-	return g.sampling.printView()
+func (g *gossip) CurrentView() map[string]Peer {
+	return toMap(g.sampling.getView(), g.selfDescriptor.ProcessIdentifier)
 }
 
 func (g *gossip) Join(initialPeers ...Peer) {

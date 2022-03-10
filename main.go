@@ -24,7 +24,7 @@ import (
 )
 
 // var envFile = ".envFiles/1.leader.env"
-const RoundResolution = 2 // or the num of messages per round ~ number of events that will be ordered
+const RoundResolution = 1 // or the num of messages per round ~ number of events that will be ordered
 
 func getData(eng *engine.Engine, dm *dataManager) func() transport.SyncRsp {
 	return func() transport.SyncRsp {
@@ -188,7 +188,8 @@ func Start(ctx context.Context, envFile string) (*dataManager, *gossipManager, *
 	gm.gsp.Join(gossipPeers...)
 	if len(entries) > 0 {
 		dm.sm.Sync(entries...)
-		dm.sm.RoundNum = entries[len(entries)-1].Round
+		dm.sm.Round()
+		dm.sm.RoundNum = entries[len(entries)-1].Round + 1
 	}
 	dm.Events.MergeEvents(initialEventOrder...)
 

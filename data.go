@@ -164,7 +164,7 @@ func getPacket(dm *dataManager) func(id string) *gossip.Packet {
 }
 
 func (dm *dataManager) startRoundSync(ctx context.Context, gm *gossipManager, hClient *transport.HttpClient) {
-	var syncDelay = 5000 * time.Millisecond
+	var syncDelay = 3000 * time.Millisecond
 
 	go func() {
 		for {
@@ -173,7 +173,7 @@ func (dm *dataManager) startRoundSync(ctx context.Context, gm *gossipManager, hC
 				return
 			case <-time.After(syncDelay):
 				if !dm.isZoneLeader() {
-					//dm.Info("As follower, Saving snapshot")
+					dm.Info("follower: ...", "roundNum", dm.sm.RoundNum)
 					//dm.Data.ApplyOrder(dm.Events.GetOrderedIds())
 					// dm.saveSnapshot()
 					continue
@@ -189,24 +189,23 @@ func (dm *dataManager) startRoundSync(ctx context.Context, gm *gossipManager, hC
 					returnedEventsUnordered := hClient.SyncOrder(l.HttpAddr(), dm.Events.GetOrder())
 					dm.Events.MergeEvents(returnedEventsUnordered...)
 				}
-				if len(dm.Events.GetOrder()) ==0 {
+				if len(dm.Events.GetOrder()) == 0 {
 					continue
 				}
+				ctx1, cancel := context.WithDeadline(context.Background(), time.Now().Add(10*time.Second))
 
 				// sync if new round
-				if dm.round < RoundResolution {
-					dm.round++
-					// dm.Trace("syncLeader: in the same round ... 3/4 & 4/4")
-					continue
-				}
-				dm.round = 0
+				//if dm.round < RoundResolution {
+				//	dm.round++
+				//	// dm.Trace("syncLeader: in the same round ... 3/4 & 4/4")
+				//	continue
+				//}
+				//dm.round = 0
 
 				dm.Trace("syncLeader: Data sync for round ...", "roundNum", dm.sm.RoundNum)
-
-				ctx1, cancel := context.WithDeadline(context.Background(), time.Now().Add(10*time.Second))
 				var wg sync.WaitGroup
 
-				if dm.applyOrderAtPeers(ctx1, cancel, &wg){
+				if dm.applyOrderAtPeers(ctx1, cancel, &wg) {
 					dm.Data.ApplyOrder(dm.Events.GetOrderedIds())
 				}
 				//
@@ -214,6 +213,13 @@ func (dm *dataManager) startRoundSync(ctx context.Context, gm *gossipManager, hC
 				// 	dm.Trace("syncLeader: Data sync complete...", "roundNum", dm.sm.RoundNum)
 				// 	continue
 				// }
+				//for {
+				<-time.After(500 * time.Millisecond)
+				//	if len(dm.Events.GetOrderedIds()) == len(dm.Data.GetOrderedPackets()) && len(dm.Events.GetOrderedIds()) != 0 {
+				//		break
+				//	}
+				//	dm.Info("waiting to download missing packets....")
+				//}
 				dm.saveSnapshot()
 				dm.sm.RoundNum++
 
@@ -240,7 +246,7 @@ func (dm *dataManager) startRoundSync(ctx context.Context, gm *gossipManager, hC
 	}()
 }
 
-func (dm *dataManager) applyOrderAtPeers( ctx1 context.Context, cancel context.CancelFunc, wg *sync.WaitGroup) bool{
+func (dm *dataManager) applyOrderAtPeers(ctx1 context.Context, cancel context.CancelFunc, wg *sync.WaitGroup) bool {
 	if len(dm.Events.GetOrder()) == 0 {
 		return false
 	}
@@ -290,7 +296,7 @@ func (dm *dataManager) waitOnGossip(ctx context.Context, gm *gossipManager, hCli
 					// send to syncLeader
 					leader = dm.state().SyncLeader.GrpcAddr()
 				}
-				if dm.isSyncLeader(){
+				if dm.isSyncLeader() {
 					events := utils.OrderToEvents(utils.PacketToOrder(gp))
 					for _, event := range events {
 						if dm.vm.GetVersion(event.EventId) == -1 {
@@ -303,10 +309,10 @@ func (dm *dataManager) waitOnGossip(ctx context.Context, gm *gossipManager, hCli
 				}
 				ctx1, cancel := context.WithDeadline(context.Background(), time.Now().Add(10*time.Second))
 				c := transport.NewDataSyncClient(ctx1, leader)
-				dm.Info("Sending event to" , "leader - ", leader)
+				dm.Info("Sending event to", "leader - ", leader)
 				_, err := c.NewEvent(ctx1, utils.PacketToOrder(gp))
 				if err != nil {
-					dm.Warn("Error from" , "leader - ", leader)
+					dm.Warn("Error from", "leader - ", leader)
 				}
 				cancel()
 
@@ -353,7 +359,7 @@ func (dm *dataManager) waitOnMissingPackets(ctx context.Context, hClient *transp
 					c := transport.NewDataSyncClient(ctx1, p)
 					dm.Info("Asking for packet", "peer", p)
 					peersHttp, _ = c.GetPacketAddresses(ctx1, &proto.Ok{Id: mp})
-					if len(peersHttp.Peers) > 0{
+					if len(peersHttp.Peers) > 0 {
 						break
 					}
 				}
@@ -363,6 +369,9 @@ func (dm *dataManager) waitOnMissingPackets(ctx context.Context, hClient *transp
 				{
 					rand.Seed(time.Now().UnixMicro())
 					r := rand.Intn(len(peersHttp.Peers))
+					if peersHttp.Peers[r].PeerId == dm.state().Self.HttpAddr() {
+						goto download
+					}
 					dm.Warn("Packet downloading from  - " + peersHttp.Peers[r].PeerId)
 					// retrieve missing packet from a random peer
 					gp := hClient.DownloadPacket(peersHttp.Peers[r].PeerId, mp)

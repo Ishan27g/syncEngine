@@ -88,6 +88,7 @@ func (ld *localData) SaveOrderedPacket(gP gossip.Packet) bool {
 		ld.tmpGossip.Remove(gP.GetId())
 		return true
 	}
+	fmt.Println("Not added previously", gP.GetId())
 	return false
 }
 

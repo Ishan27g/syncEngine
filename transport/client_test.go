@@ -12,7 +12,7 @@ import (
 func TestNewVotingClient(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), timeout)
 	defer cancel()
-	mockRpcServer(":9000").Start(ctx)
+	mockRpcServer(":9000").Start(ctx, nil)
 
 	rc := NewVotingClient("localhost:9000")
 	assert.NotNil(t, rc)
