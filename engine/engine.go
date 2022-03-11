@@ -1,15 +1,14 @@
 package engine
 
 import (
-	"fmt"
 	"sync"
 
 	"github.com/Ishan27g/go-utils/mLogger"
 	gossip "github.com/Ishan27g/gossipProtocol"
-	"github.com/Ishan27g/syncEngine/peer"
-	"github.com/Ishan27g/syncEngine/provider"
-	"github.com/Ishan27g/syncEngine/transport"
 	"github.com/hashicorp/go-hclog"
+
+	"github.com/Ishan27g/syncEngine/peer"
+	"github.com/Ishan27g/syncEngine/transport"
 )
 
 type gossipW struct {
@@ -33,7 +32,7 @@ type Engine struct {
 
 	hclog.Logger
 	HClient *transport.HttpClient
-	jp      *provider.JaegerProvider
+	// jp      *provider.JaegerProvider
 }
 
 func (e *Engine) HbFromRaftLeader(from peer.Peer) {
@@ -93,7 +92,7 @@ func (e *Engine) GetSyncFollowers() []peer.Peer {
 	return f
 }
 func Init(self peer.Peer, hClient *transport.HttpClient) *Engine {
-	dataFile := self.HttpPort + ".csv"
+	dataFile := DataFile(self)
 	mLogger.Apply(mLogger.Level(hclog.Trace), mLogger.Color(true))
 	e := &Engine{
 		self:               self,
@@ -112,8 +111,8 @@ func Init(self peer.Peer, hClient *transport.HttpClient) *Engine {
 
 	var raftLeader peer.Peer
 	var syncLeader peer.Peer
+
 	peers := transport.Register(self)
-	fmt.Println("Peers - ", peers)
 	switch len(*peers) {
 	case 0:
 		e.self.Mode = peer.LEADER
@@ -158,6 +157,11 @@ func Init(self peer.Peer, hClient *transport.HttpClient) *Engine {
 	})
 
 	return e
+}
+
+func DataFile(self peer.Peer) string {
+	dataFile := self.HttpPort + ".csv"
+	return dataFile
 }
 func (e *Engine) BuildHttpCbs() []transport.HTTPCbs {
 	return []transport.HTTPCbs{

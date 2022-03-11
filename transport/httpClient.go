@@ -32,13 +32,15 @@ var logger = mLogger.Get("http-client")
 type traceData interface{}
 type HttpClient struct {
 	hclog.Logger
-	tr trace.Tracer
+	tr      trace.Tracer
+	tracing bool
 }
 
 func NewHttpClient(id string, tr trace.Tracer) HttpClient {
 	return HttpClient{
-		Logger: mLogger.Get("http-client" + id),
-		tr:     tr,
+		Logger:  mLogger.Get("http-client" + id),
+		tr:      tr,
+		tracing: tr != nil,
 	}
 }
 func stringJson(js interface{}) string {
@@ -111,7 +113,7 @@ func (hc *HttpClient) SendHttp(req *http.Request, spanName string, data traceDat
 
 	ctx, cancel := context.WithCancel(req.Context())
 	span := trace.SpanFromContext(req.Context())
-	if !span.IsRecording() {
+	if !span.IsRecording() && hc.tracing {
 		ctx, span = hc.tr.Start(ctx, spanName, trace.WithAttributes(semconv.MessagingDestinationKey.String(req.URL.Path)))
 		defer span.End()
 	}
@@ -134,7 +136,7 @@ func (hc *HttpClient) SendHttp(req *http.Request, spanName string, data traceDat
 	}
 	ctx = baggage.ContextWithBaggage(ctx, bag)
 
-	client := http.Client{Transport: otelhttp.NewTransport(http.DefaultTransport), Timeout: time.Second * 3}
+	client := http.Client{Transport: otelhttp.NewTransport(http.DefaultTransport), Timeout: time.Second * 10}
 
 	outReq, _ := http.NewRequestWithContext(ctx, req.Method, req.URL.String(), req.Body)
 	for key, value := range req.Header {

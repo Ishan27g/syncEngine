@@ -1,0 +1,29 @@
+version: "3.7"
+
+services:
+
+  jaeger:
+    hostname: jaeger
+    image: jaegertracing/all-in-one:1.31
+    networks:
+      sync_nw:
+    ports:
+      - "16686:16686"
+      - "14268:14268"
+    deploy:
+      resources:
+        limits:
+          cpus: '0.05'
+          memory: 250M
+
+#  registry:
+#    image: sync-registry
+#    ports:
+#      - "9999:9999"
+#    networks:
+#      sync_nw:
+
+networks:
+  sync_nw:
+    driver:
+      bridge

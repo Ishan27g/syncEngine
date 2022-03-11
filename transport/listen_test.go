@@ -83,7 +83,7 @@ func TestNewRpcServer(t *testing.T) {
 	assert.NotNil(t, srv)
 
 	ctx, cancel := context.WithTimeout(context.Background(), timeout)
-	srv.Start(ctx)
+	srv.Start(ctx, nil)
 	<-time.After(timeout)
 	cancel()
 	<-time.After(timeout)
@@ -91,7 +91,7 @@ func TestNewRpcServer(t *testing.T) {
 	// restart
 	ctx, cancel = context.WithTimeout(context.Background(), timeout)
 	defer cancel()
-	srv.Start(ctx)
+	srv.Start(ctx, nil)
 	<-time.After(timeout)
 
 }

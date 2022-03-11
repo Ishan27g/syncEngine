@@ -41,7 +41,7 @@ func (ld *localData) GetPacket(id string) *gossip.Packet {
 	if gP := ld.tmpGossip.Get(id); gP != nil {
 		return gP
 	}
-	fmt.Println("\t\t\t\tno packet - ", id)
+	fmt.Println("no packet - ", id)
 	return nil
 }
 func (ld *localData) GetPacketAvailableAt(id string) []string {
@@ -88,6 +88,7 @@ func (ld *localData) SaveOrderedPacket(gP gossip.Packet) bool {
 		ld.tmpGossip.Remove(gP.GetId())
 		return true
 	}
+	fmt.Println("Not added previously", gP.GetId())
 	return false
 }
 
