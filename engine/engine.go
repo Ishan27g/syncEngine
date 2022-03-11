@@ -8,7 +8,6 @@ import (
 	"github.com/hashicorp/go-hclog"
 
 	"github.com/Ishan27g/syncEngine/peer"
-	"github.com/Ishan27g/syncEngine/provider"
 	"github.com/Ishan27g/syncEngine/transport"
 )
 
@@ -33,7 +32,7 @@ type Engine struct {
 
 	hclog.Logger
 	HClient *transport.HttpClient
-	jp      *provider.JaegerProvider
+	// jp      *provider.JaegerProvider
 }
 
 func (e *Engine) HbFromRaftLeader(from peer.Peer) {

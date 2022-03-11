@@ -3,7 +3,6 @@ package engine
 import (
 	"context"
 	"fmt"
-	"strconv"
 	"time"
 
 	"github.com/Ishan27g/go-utils/mLogger"
@@ -140,7 +139,7 @@ func possiblePeers(zone int) []string {
 }
 func (r *raft) election(raftPeers []string, term *proto.Term) bool {
 
-	r.Warn("Requesting votes from peers  for term-" + strconv.Itoa(int(term.TermCount)))
+	//r.Warn("Requesting votes from peers  for term-" + strconv.Itoa(int(term.TermCount)))
 	ctx, cancel := context.WithTimeout(context.Background(), 6*time.Second)
 	defer cancel()
 	votes := 0
@@ -155,7 +154,7 @@ func (r *raft) election(raftPeers []string, term *proto.Term) bool {
 		}
 		p.Disconnect()
 	}
-	r.Warn("VOTED? " + fmt.Sprintf("%v,%v", votes, raftPeers))
+	//r.Warn("VOTED? " + fmt.Sprintf("%v,%v", votes, raftPeers))
 
 	return votes == len(raftPeers)
 }

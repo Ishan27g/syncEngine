@@ -62,15 +62,16 @@ func Start(ctx context.Context, envFile string) (*dataManager, *gossipManager, *
 
 	tracerId := self.HttpAddr()
 
-	url := "http://localhost:14268/api/traces"
+	//url := "http://localhost:14268/api/traces"
 
-	jp := provider.InitJaeger(context.Background(), tracerId, self.HttpPort, url)
-	go func(ctx context.Context, jp *provider.JaegerProvider) {
-		<-ctx.Done()
-		jp.Close()
-	}(ctx, jp)
+	// jp := provider.InitJaeger(context.Background(), tracerId, self.HttpPort, url)
+	// go func(ctx context.Context, jp *provider.JaegerProvider) {
+	// 	<-ctx.Done()
+	// 	jp.Close()
+	// }(ctx, jp)
 
-	hClient := transport.NewHttpClient(self.HttpPort, jp.Get().Tracer(tracerId))
+	// hClient := transport.NewHttpClient(self.HttpPort, jp.Get().Tracer(tracerId))
+	hClient := transport.NewHttpClient(self.HttpPort, nil)
 
 	eng := engine.Init(self, &hClient)
 
@@ -107,7 +108,8 @@ func Start(ctx context.Context, envFile string) (*dataManager, *gossipManager, *
 		syncPeers: func() []peer.Peer {
 			return eng.GetSyncFollowers()
 		},
-		Logger: mLogger.Get("dm" + self.HttpPort),
+		Logger:    mLogger.Get("dm" + self.HttpPort),
+		nextRound: make(chan int),
 	}
 
 	httpCbs := append(eng.BuildHttpCbs(), []transport.HTTPCbs{
@@ -132,9 +134,7 @@ func Start(ctx context.Context, envFile string) (*dataManager, *gossipManager, *
 		transport.WithPacketCb(getPacket(&dm)),
 		transport.WithGossipSend(gm.Gossip),
 		transport.WithRoundNumCb(func(roundNum int) {
-			dm.sm.RoundNum = roundNum
-			dm.sm.Round()
-			dm.Events.Reset()
+			dm.nextRound <- roundNum
 		}),
 	}...)
 
@@ -197,7 +197,8 @@ func Start(ctx context.Context, envFile string) (*dataManager, *gossipManager, *
 	dm.waitOnMissingPackets(ctx, &hClient)
 	dm.startRoundSync(ctx, &gm, &hClient)
 
-	return &dm, &gm, jp
+	return &dm, &gm, nil
+	//	return &dm, &gm, jp
 }
 
 // func main() {
@@ -247,9 +248,9 @@ func main() {
 	ctx, can := context.WithCancel(context.Background())
 	defer can()
 
-	dm1, gm1, jp := Start(ctx, envFile)
+	dm1, gm1, _ := Start(ctx, envFile)
 
-	defer jp.Shutdown(ctx)
+	//defer jp.Shutdown(ctx)
 
 	reader := bufio.NewReader(os.Stdin)
 	for {
