@@ -5,10 +5,10 @@ import (
 	"testing"
 	"time"
 
+	registry "github.com/Ishan27g/registry/golang/registry/package"
 	"github.com/Ishan27g/syncEngine/peer"
 	"github.com/Ishan27g/syncEngine/provider"
 	"github.com/Ishan27g/syncEngine/transport"
-	registry "github.com/Ishan27g/registry/golang/registry/package"
 	"github.com/stretchr/testify/assert"
 )
 
@@ -22,6 +22,9 @@ func mockRegistry() {
 }
 func TestInit(t *testing.T) {
 	mockRegistry()
+	t.Cleanup(func() {
+		registry.ShutDown()
+	})
 	<-time.After(2 * time.Second)
 	var self peer.Peer
 	self, transport.RegistryUrl = peer.FromEnv(envFile)

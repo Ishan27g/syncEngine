@@ -84,7 +84,7 @@ func (z *zone) matchSnapshot(t *testing.T, sentOrder []string) {
 			t.Parallel()
 			rand.Seed(time.Now().Unix())
 			sort.Strings(fileData)
-			assert.Equal(t, fileData[0], fileData[len(fileData)-1])
+			assert.Equal(t, fileData[rand.Intn(len(fileData))], fileData[rand.Intn(len(fileData))])
 			assert.Equal(t, fileData[rand.Intn(len(fileData))], fileData[rand.Intn(len(fileData))])
 		})
 
@@ -141,6 +141,9 @@ func Test_Simple(t *testing.T) {
 	ctx, can := context.WithCancel(context.Background())
 	defer can()
 	nw := setupNetwork(ctx, envFile+"1.leader.env")
+	t.Cleanup(func() {
+		registry.ShutDown()
+	})
 
 	<-time.After(2 * time.Second)
 	nw.allProcesses[envFile+"1.leader.env"].sendData(true, "ok")
