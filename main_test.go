@@ -18,7 +18,6 @@ import (
 	registry "github.com/Ishan27g/registry/golang/registry/package"
 )
 
-var once sync.Once
 var envFile = "./.envFiles/"
 
 type envMap = map[string][]string
@@ -81,6 +80,7 @@ func (z *zone) matchSnapshot(t *testing.T, sentOrder []string) {
 		}
 		for _, file := range dataFiles {
 			t.Run("comparing order with entries for "+file, func(t *testing.T) {
+				t.Parallel()
 				assert.FileExists(t, file)
 				f, err := ioutil.ReadFile(file)
 				fileData = append(fileData, string(f))
@@ -115,12 +115,10 @@ type network struct {
 }
 
 func setupNetwork(ctx context.Context, leaders ...string) network {
-	once.Do(func() {
-		rand.Seed(time.Now().UnixNano())
-		go func() {
-			registry.Run("9999", registry.Setup())
-		}()
-	})
+	rand.Seed(time.Now().UnixNano())
+	go func() {
+		registry.Run("9999", registry.Setup())
+	}()
 	n := network{
 		ctx:          ctx,
 		allProcesses: map[string]*zone{},
@@ -154,6 +152,7 @@ func Test_Single_Round(t *testing.T) {
 
 	var numMessages = 10
 	nw := setupNetwork(ctx, l)
+	defer registry.ShutDown()
 
 	t.Run("Zone-"+l+" messages - "+strconv.Itoa(numMessages), func(t *testing.T) {
 		defer nw.allProcesses[l].removeFiles()
@@ -200,6 +199,7 @@ func Test_Multiple_Rounds(t *testing.T) {
 
 	var numMessages = 16
 	nw := setupNetwork(ctx, l)
+	defer registry.ShutDown()
 
 	t.Run("Zone-"+l+" messages - "+strconv.Itoa(numMessages), func(t *testing.T) {
 		defer nw.allProcesses[l].removeFiles()

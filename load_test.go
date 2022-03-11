@@ -9,6 +9,8 @@ import (
 	"sync"
 	"testing"
 	"time"
+
+	registry "github.com/Ishan27g/registry/golang/registry/package"
 )
 
 func Test_Gossip_Load_Multiple_Rounds(t *testing.T) {
@@ -19,6 +21,7 @@ func Test_Gossip_Load_Multiple_Rounds(t *testing.T) {
 
 	var numMessages = 100
 	nw := setupNetwork(ctx, l)
+	defer registry.ShutDown()
 
 	t.Run("Zone-"+l+" messages - "+strconv.Itoa(numMessages), func(t *testing.T) {
 		var sentOrder = make(chan string, numMessages)
@@ -59,8 +62,9 @@ func Test_Gossip_Load_Single_Round(t *testing.T) {
 	ctx, can := context.WithCancel(context.Background())
 	defer can()
 
-	var numMessages = 200
+	var numMessages = 100
 	nw := setupNetwork(ctx, l)
+	defer registry.ShutDown()
 
 	t.Run("Zone-"+l+" messages - "+strconv.Itoa(numMessages), func(t *testing.T) {
 		var sentOrder = make(chan string, numMessages)
