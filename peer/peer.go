@@ -4,7 +4,7 @@ import (
 	"fmt"
 	"strings"
 
-	_package "github.com/Ishan27gOrg/registry/golang/registry/package"
+	_package "github.com/Ishan27g/registry/golang/registry/package"
 )
 
 const (

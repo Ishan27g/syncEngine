@@ -6,7 +6,7 @@ import (
 	gossip "github.com/Ishan27g/gossipProtocol"
 	"github.com/Ishan27g/syncEngine/peer"
 
-	_package "github.com/Ishan27gOrg/registry/golang/registry/package"
+	_package "github.com/Ishan27g/registry/golang/registry/package"
 )
 
 var RegistryUrl string

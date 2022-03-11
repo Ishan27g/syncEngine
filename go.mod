@@ -5,8 +5,8 @@ go 1.17
 require (
 	github.com/Ishan27g/go-utils/mLogger v0.0.0-20220120054524-a8da265557bd
 	github.com/Ishan27g/gossipProtocol v0.0.0-20220221134317-836c1cd7f219
+	github.com/Ishan27g/registry/golang/registry v0.0.0-20220221134523-b13bddd19368
 	github.com/Ishan27g/vClock v0.0.0-20220221133617-fae27884de39
-	github.com/Ishan27gOrg/registry/golang/registry v0.0.0-00010101000000-000000000000
 	github.com/bxcodec/faker/v3 v3.7.0
 	github.com/emirpasic/gods v1.12.0
 	github.com/gin-gonic/gin v1.7.7
@@ -61,5 +61,3 @@ require (
 	gopkg.in/yaml.v2 v2.2.8 // indirect
 	gopkg.in/yaml.v3 v3.0.0-20200313102051-9f266ea9e77c // indirect
 )
-
-replace github.com/Ishan27gOrg/registry/golang/registry => ../../Ishan27g/registry/golang/registry
