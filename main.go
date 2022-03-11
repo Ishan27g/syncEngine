@@ -134,7 +134,21 @@ func Start(ctx context.Context, envFile string) (*dataManager, *gossipManager, *
 		transport.WithPacketCb(getPacket(&dm)),
 		transport.WithGossipSend(gm.Gossip),
 		transport.WithRoundNumCb(func(roundNum int) {
-			// dm.nextRound <- roundNum
+			go func() {
+				goto wait
+			wait:
+				{
+					if !dm.canSnapshot() {
+						<-time.After(1 * time.Second)
+						goto wait
+					}
+				}
+				dm.saveSnapshot()
+				dm.sm.RoundNum++
+				dm.sendRoundNum(&hClient)
+				dm.sm.Round()
+				dm.Events.Reset()
+			}()
 		}),
 	}...)
 
