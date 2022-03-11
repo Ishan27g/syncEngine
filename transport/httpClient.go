@@ -136,7 +136,7 @@ func (hc *HttpClient) SendHttp(req *http.Request, spanName string, data traceDat
 	}
 	ctx = baggage.ContextWithBaggage(ctx, bag)
 
-	client := http.Client{Transport: otelhttp.NewTransport(http.DefaultTransport), Timeout: time.Second * 3}
+	client := http.Client{Transport: otelhttp.NewTransport(http.DefaultTransport), Timeout: time.Second * 10}
 
 	outReq, _ := http.NewRequestWithContext(ctx, req.Method, req.URL.String(), req.Body)
 	for key, value := range req.Header {

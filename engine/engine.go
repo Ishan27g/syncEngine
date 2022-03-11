@@ -92,7 +92,7 @@ func (e *Engine) GetSyncFollowers() []peer.Peer {
 	return f
 }
 func Init(self peer.Peer, hClient *transport.HttpClient) *Engine {
-	dataFile := self.HttpPort + ".csv"
+	dataFile := DataFile(self)
 	mLogger.Apply(mLogger.Level(hclog.Trace), mLogger.Color(true))
 	e := &Engine{
 		self:               self,
@@ -157,6 +157,11 @@ func Init(self peer.Peer, hClient *transport.HttpClient) *Engine {
 	})
 
 	return e
+}
+
+func DataFile(self peer.Peer) string {
+	dataFile := self.HttpPort + ".csv"
+	return dataFile
 }
 func (e *Engine) BuildHttpCbs() []transport.HTTPCbs {
 	return []transport.HTTPCbs{

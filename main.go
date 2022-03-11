@@ -134,7 +134,7 @@ func Start(ctx context.Context, envFile string) (*dataManager, *gossipManager, *
 		transport.WithPacketCb(getPacket(&dm)),
 		transport.WithGossipSend(gm.Gossip),
 		transport.WithRoundNumCb(func(roundNum int) {
-			dm.nextRound <- roundNum
+			// dm.nextRound <- roundNum
 		}),
 	}...)
 
