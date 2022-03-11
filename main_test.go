@@ -4,6 +4,7 @@ import (
 	"context"
 	"io/ioutil"
 	"math/rand"
+	"os"
 	"sort"
 	"strconv"
 	"sync"
@@ -57,6 +58,12 @@ type zone struct {
 	followers []process
 }
 
+func (z *zone) removeFiles() {
+	_ = os.Remove(engine.DataFile(z.leader.self()))
+	for _, follower := range z.followers {
+		_ = os.Remove(engine.DataFile(follower.self()))
+	}
+}
 func (z *zone) matchSnapshot(t *testing.T, sentOrder []string) {
 
 	t.Run("comparing snapshot for zone", func(t *testing.T) {
@@ -88,12 +95,10 @@ func (z *zone) matchSnapshot(t *testing.T, sentOrder []string) {
 			rand.Seed(time.Now().Unix())
 			sort.Strings(fileData)
 			if len(fileData) > 0 {
-
 				assert.Equal(t, fileData[rand.Intn(len(fileData))], fileData[rand.Intn(len(fileData))])
 				assert.Equal(t, fileData[rand.Intn(len(fileData))], fileData[rand.Intn(len(fileData))])
 			}
 		})
-
 	})
 }
 func (z *zone) sendData(toLeader bool, data string) {
@@ -153,14 +158,15 @@ func Test_Single_Round(t *testing.T) {
 	var numMessages = 100
 	nw := setupNetwork(ctx, l)
 
-	t.Cleanup(func() {
-		registry.ShutDown()
-	})
 	t.Run("Zone-"+l+" messages - "+strconv.Itoa(numMessages), func(t *testing.T) {
+		t.Cleanup(func() {
+			registry.ShutDown()
+			nw.allProcesses[l].removeFiles()
+		})
 		var sentOrder = make(chan string, numMessages)
 		var wg sync.WaitGroup
 
-		<-time.After(3 * time.Second)
+		<-time.After(1 * time.Second)
 		for i := 0; i < numMessages; i += 2 {
 			wg.Add(2)
 			<-time.After(15 * time.Millisecond) // timeout between consecutive gossip requests at same process
@@ -197,18 +203,19 @@ func Test_Multiple_Rounds(t *testing.T) {
 	ctx, can := context.WithCancel(context.Background())
 	defer can()
 
-	var numMessages = 10
+	var numMessages = 16
 	nw := setupNetwork(ctx, l)
 
-	t.Cleanup(func() {
-		registry.ShutDown()
-	})
 	t.Run("Zone-"+l+" messages - "+strconv.Itoa(numMessages), func(t *testing.T) {
+		t.Cleanup(func() {
+			registry.ShutDown()
+			nw.allProcesses[l].removeFiles()
+		})
 		var sentOrder = make(chan string, numMessages)
 		var wg sync.WaitGroup
 
-		<-time.After(3 * time.Second)
-		for i := 0; i < numMessages; i += 2 {
+		<-time.After(1 * time.Second)
+		for i := 0; i < numMessages; i += 4 {
 			wg.Add(2)
 			<-time.After(2 * time.Second) // new round
 			go func(i int) {
@@ -219,9 +226,17 @@ func Test_Multiple_Rounds(t *testing.T) {
 					data := "data " + strconv.Itoa(i)
 					nw.allProcesses[l].sendData(true, data)
 					sentOrder <- data
+					<-time.After(randomInt())
+					data = "data " + strconv.Itoa(i)
+					nw.allProcesses[l].sendData(true, data)
+					sentOrder <- data
 				}(i)
 				<-time.After(randomInt())
 				data := "data " + strconv.Itoa(i+1)
+				nw.allProcesses[l].sendData(false, data)
+				sentOrder <- data
+				<-time.After(randomInt())
+				data = "data " + strconv.Itoa(i+1)
 				nw.allProcesses[l].sendData(false, data)
 				sentOrder <- data
 			}(i)

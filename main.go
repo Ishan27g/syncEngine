@@ -164,9 +164,9 @@ func Start(ctx context.Context, envFile string) (*dataManager, *gossipManager, *
 	// go transport.Listen(ctx, rpcServer, httpServer)
 	rpcServer.Start(ctx, nil)
 	httpServer.Start(ctx, nil)
-
 	eng.Start()
-	<-time.After(engine.Hb_Timeout * 2)
+
+	<-time.After(engine.Hb_Timeout)
 
 	dm.Info("started...", "isZoneLeader", dm.isZoneLeader(), "isSyncLeader", dm.isSyncLeader())
 
