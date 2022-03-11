@@ -31,8 +31,6 @@ func (ev *Event) MergeEvents(events ...vClock.Event) {
 	}
 }
 
-// MergeEvent adds the event as an expire-able entry. The event will expire based on the last
-// call to merge that event.
 func (ev *Event) MergeEvent(id string, clock vClock.EventClock) {
 	ev.events.MergeEvent(vClock.Event{EventId: id, EventClock: clock})
 }

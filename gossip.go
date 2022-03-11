@@ -8,7 +8,7 @@ type gossipManager struct {
 }
 
 func (g *gossipManager) Gossip(data string) {
-	go g.gsp.SendGossip(data)
+	g.gsp.SendGossip(data)
 }
 func (g *gossipManager) Receive() gossip.Packet {
 	return <-g.rcv

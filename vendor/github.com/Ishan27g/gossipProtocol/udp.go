@@ -63,7 +63,6 @@ func (u *udpClient) send(address string, data []byte) []byte {
 		return nil
 	}
 	buffer = buffer[:readLen]
-	u.logger.Trace("Received startRounds response from - " + c.RemoteAddr().String())
 	return buffer
 }
 
@@ -104,8 +103,8 @@ func Listen(ctx context.Context, port string, gossipCb func(Packet, Peer) []byte
 				fmt.Println("WriteToUDP", err.Error())
 			}
 		} else {
-			rsp := gossipCb(ByteToPacket(buffer))
-			_, err = connection.WriteToUDP(rsp, addr)
+			go gossipCb(ByteToPacket(buffer))
+			_, err = connection.WriteToUDP([]byte("OKAY"), addr)
 			if err != nil {
 				fmt.Println(err.Error())
 			}

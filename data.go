@@ -75,7 +75,6 @@ func (dm *dataManager) saveSnapshot() {
 	currentHash := utils.DefaultHash(entries)
 	if dm.sm.LastSnapshotHash != currentHash {
 		dm.sm.Apply(entries...)
-		fmt.Println(dm.sm.Get())
 		dm.sm.Save()
 		dm.Info("Saved snapshot")
 	}
@@ -356,37 +355,52 @@ func (dm *dataManager) waitOnMissingPackets(ctx context.Context, hClient *transp
 				dm.missingPacketCount++
 				dm.Info("Retrieving missing packet ", "id", mp)
 				var peers []string
-				if !dm.isZoneLeader() {
-					// ask raftLeader for missing packet addresses
 
-					peers = append(peers, dm.state().RaftLeader.GrpcAddr())
-				} else if dm.isSyncLeader() {
-					for _, p := range dm.zonePeers() {
-						peers = append(peers, p.GrpcAddr())
+				goto lookup
+			lookup:
+				{
+					peers = []string{}
+					if !dm.isZoneLeader() {
+						// ask raftLeader for missing packet addresses
+						peers = append(peers, dm.state().RaftLeader.GrpcAddr())
+					} else if dm.isSyncLeader() {
+						for _, p := range dm.zonePeers() {
+							peers = append(peers, p.GrpcAddr())
+						}
+					} else {
+						// ask syncLeader for missing packet addresses
+						peers = append(peers, dm.state().SyncLeader.GrpcAddr())
 					}
-				} else {
-					// ask syncLeader for missing packet addresses
-
-					peers = append(peers, dm.state().SyncLeader.GrpcAddr())
 				}
 				// ask leader for peers where packet is available
-				fmt.Println(dm.state())
-				ctx1, cancel := context.WithDeadline(context.Background(), time.Now().Add(3*time.Second))
+				ctx1, cancel := context.WithDeadline(context.Background(), time.Now().Add(60*time.Second))
 				var peersHttp *proto.Peers
+				var found = false
+				var err error
 				for _, p := range peers {
 					c := transport.NewDataSyncClient(ctx1, p)
 					dm.Info("Asking for packet", "peer", p)
-					peersHttp, _ = c.GetPacketAddresses(ctx1, &proto.Ok{Id: mp})
+					peersHttp, err = c.GetPacketAddresses(ctx1, &proto.Ok{Id: mp})
+					if err != nil {
+						dm.Error(err.Error())
+					}
 					if len(peersHttp.Peers) > 0 {
+						found = true
 						break
 					}
 				}
 				cancel()
+				if !found {
+					dm.Warn("Retrying packet lookup in network", "id", mp)
+					<-time.After(300 * time.Millisecond)
+					goto lookup
+				}
 				goto download
 			download:
 				{
 					rand.Seed(time.Now().UnixMicro())
 					r := rand.Intn(len(peersHttp.Peers))
+					//r := 0
 					if peersHttp.Peers[r].PeerId == dm.state().Self.HttpAddr() {
 						goto download
 					}

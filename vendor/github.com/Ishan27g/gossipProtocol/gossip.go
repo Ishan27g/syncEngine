@@ -107,7 +107,19 @@ func (g *gossip) fanOut(gm gossipMessage, exclude Peer) {
 		return
 	}
 	for i := 0; i < g.env.FanOut; i++ {
+		if i == g.sampling.Size() {
+			// fmt.Println("no more peers")
+			return
+		}
 		peer := g.sampling.GetPeer(exclude)
+		if peer.UdpAddress == "" {
+			// fmt.Println("no peer")
+			return
+		}
+		// if from the only other peer in nw, dont gossip back
+		if peer.ProcessIdentifier == exclude.ProcessIdentifier && g.sampling.Size() == 1 {
+			return
+		}
 		if peer.UdpAddress != "" && peer.ProcessIdentifier != g.selfDescriptor.ProcessIdentifier {
 			g.lock.Lock()
 			tmp := vClock.Copy(*g.allEvents)
@@ -124,7 +136,6 @@ func (g *gossip) fanOut(gm gossipMessage, exclude Peer) {
 				(*g.allEvents).SendEvent(id, nil)
 				g.lock.Unlock()
 			}
-
 		}
 	}
 }

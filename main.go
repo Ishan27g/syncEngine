@@ -24,7 +24,7 @@ import (
 )
 
 // var envFile = ".envFiles/1.leader.env"
-const RoundResolution = 1 // or the num of messages per round ~ number of events that will be ordered
+const RoundResolution = 1000 // or the num of messages per round ~ number of events that will be ordered
 
 func getData(eng *engine.Engine, dm *dataManager) func() transport.SyncRsp {
 	return func() transport.SyncRsp {

@@ -160,7 +160,9 @@ selectPeer:
 	{
 		node = s.view.randomNode()
 	}
-
+	if s.Size() == 2 && node.ProcessIdentifier == exclude.ProcessIdentifier {
+		return Peer{}
+	}
 	if node.ProcessIdentifier == s.selfDescriptor.ProcessIdentifier {
 		goto selectPeer
 	}
