@@ -67,7 +67,6 @@ func (z *zone) removeFiles() {
 func (z *zone) matchSnapshot(t *testing.T, sentOrder []string) {
 
 	t.Run("comparing snapshot for zone", func(t *testing.T) {
-		t.Parallel()
 		var dataFiles []string
 		var fileData []string
 
@@ -82,7 +81,6 @@ func (z *zone) matchSnapshot(t *testing.T, sentOrder []string) {
 		}
 		for _, file := range dataFiles {
 			t.Run("comparing order with entries for "+file, func(t *testing.T) {
-				t.Parallel()
 				assert.FileExists(t, file)
 				f, err := ioutil.ReadFile(file)
 				fileData = append(fileData, string(f))
@@ -91,7 +89,6 @@ func (z *zone) matchSnapshot(t *testing.T, sentOrder []string) {
 			})
 		}
 		t.Run("comparing random entries", func(t *testing.T) {
-			t.Parallel()
 			rand.Seed(time.Now().Unix())
 			sort.Strings(fileData)
 			if len(fileData) > 0 {
@@ -155,14 +152,12 @@ func Test_Single_Round(t *testing.T) {
 	ctx, can := context.WithCancel(context.Background())
 	defer can()
 
-	var numMessages = 100
+	var numMessages = 10
 	nw := setupNetwork(ctx, l)
 
 	t.Run("Zone-"+l+" messages - "+strconv.Itoa(numMessages), func(t *testing.T) {
-		t.Cleanup(func() {
-			registry.ShutDown()
-			nw.allProcesses[l].removeFiles()
-		})
+		defer nw.allProcesses[l].removeFiles()
+
 		var sentOrder = make(chan string, numMessages)
 		var wg sync.WaitGroup
 
@@ -180,7 +175,7 @@ func Test_Single_Round(t *testing.T) {
 					sentOrder <- data
 				}(i)
 				<-time.After(randomInt())
-				data := "data " + strconv.Itoa(i+1)
+				data := "data " + strconv.Itoa(i+1+1)
 				nw.allProcesses[l].sendData(false, data)
 				sentOrder <- data
 			}(i)
@@ -207,10 +202,8 @@ func Test_Multiple_Rounds(t *testing.T) {
 	nw := setupNetwork(ctx, l)
 
 	t.Run("Zone-"+l+" messages - "+strconv.Itoa(numMessages), func(t *testing.T) {
-		t.Cleanup(func() {
-			registry.ShutDown()
-			nw.allProcesses[l].removeFiles()
-		})
+		defer nw.allProcesses[l].removeFiles()
+
 		var sentOrder = make(chan string, numMessages)
 		var wg sync.WaitGroup
 
@@ -227,16 +220,16 @@ func Test_Multiple_Rounds(t *testing.T) {
 					nw.allProcesses[l].sendData(true, data)
 					sentOrder <- data
 					<-time.After(randomInt())
-					data = "data " + strconv.Itoa(i)
+					data = "data " + strconv.Itoa(i+1)
 					nw.allProcesses[l].sendData(true, data)
 					sentOrder <- data
 				}(i)
 				<-time.After(randomInt())
-				data := "data " + strconv.Itoa(i+1)
+				data := "data " + strconv.Itoa(i+1+1)
 				nw.allProcesses[l].sendData(false, data)
 				sentOrder <- data
 				<-time.After(randomInt())
-				data = "data " + strconv.Itoa(i+1)
+				data = "data " + strconv.Itoa(i+1+1+1)
 				nw.allProcesses[l].sendData(false, data)
 				sentOrder <- data
 			}(i)
