@@ -88,6 +88,7 @@ func (hc *HttpClient) sendHttp(url string, spanName string, b []byte) *peer.Stat
 	if rsp := hc.SendHttp(req, spanName, traceData(nil)); rsp != nil {
 		return parseRsp(rsp)
 	}
+	logger.Error(url)
 	return nil
 }
 func (hc *HttpClient) FindAndFollowRaftLeader(raftPeers *[]peer.Peer, self peer.Peer) *peer.State {
@@ -132,7 +133,7 @@ func (hc *HttpClient) SendHttp(req *http.Request, spanName string, data traceDat
 	bag, err := baggage.Parse("username=goku")
 	if err != nil {
 		logger.Trace("ERROR parsing baggage" + err.Error())
-		return nil
+		// return nil
 	}
 	ctx = baggage.ContextWithBaggage(ctx, bag)
 
@@ -150,6 +151,7 @@ func (hc *HttpClient) SendHttp(req *http.Request, spanName string, data traceDat
 		return nil
 	}
 	span = trace.SpanFromContext(outReq.Context())
+
 	// on error return nil
 	if resp.StatusCode < 200 || resp.StatusCode > 205 {
 		span.AddEvent("Client response code", trace.WithAttributes(attribute.String("Success", resp.Status)))
@@ -186,18 +188,20 @@ func (hc *HttpClient) SendPing(p string) *peer.State {
 	return nil
 }
 
-func (hc *HttpClient) SendSyncLeaderHb(from peer.Peer, to ...string) {
+func (hc *HttpClient) SendSyncLeaderHb(from peer.Peer, to ...string) []*peer.State {
 	rand.Seed(time.Now().Unix())
 	tkr := time.Tick(250 * time.Millisecond)
 	b, e := json.Marshal(&from)
 	if e != nil {
 		logger.Trace("Bad payload  " + e.Error())
 	}
+	var syncFollowers []*peer.State
 	for _, s := range to {
 		<-tkr
 		url := s + baseUrl + "/leader/syncLeader/HB"
-		hc.sendHttp(url, "SendSyncLeaderHb", b)
+		syncFollowers = append(syncFollowers, hc.sendHttp(url, "SendSyncLeaderHb", b))
 	}
+	return syncFollowers
 }
 
 func (hc *HttpClient) SendZoneHeartBeat(from peer.Peer, to ...peer.Peer) []*peer.State {
@@ -205,14 +209,24 @@ func (hc *HttpClient) SendZoneHeartBeat(from peer.Peer, to ...peer.Peer) []*peer
 	if e != nil {
 		logger.Trace("Bad payload  " + e.Error())
 	}
-	var followers []*peer.State
+	var followers = make(chan *peer.State, len(to))
+	var wg sync.WaitGroup
 	for _, p := range to {
-		url := p.HttpAddr() + baseUrl + "/follower/receiveHeartBeat"
-		//logger.Debug("sending heartbeat to " + url)
-		followers = append(followers, hc.sendHttp(url, "SendZoneHeartBeat", b))
+		wg.Add(1)
+		go func(p peer.Peer, followers chan *peer.State) {
+			defer wg.Done()
+			url := p.HttpAddr() + baseUrl + "/follower/receiveHeartBeat"
+			f := hc.sendHttp(url, "SendZoneHeartBeat", b)
+			followers <- f
+		}(p, followers)
 	}
-
-	return followers
+	wg.Wait()
+	close(followers)
+	var f []*peer.State
+	for follower := range followers {
+		f = append(f, follower)
+	}
+	return f
 }
 func (hc *HttpClient) SendSyncRequest(leader string, initialEventOrder *[]vClock.Event, entries *[]snapshot.Entry, from peer.Peer) peer.Peer {
 	url := leader + baseUrl + "/leader/syncEventsOrder"
@@ -281,15 +295,19 @@ func (hc *HttpClient) SyncOrder(to string, sendOrder []vClock.Event) []vClock.Ev
 	}
 	return nil
 }
-func (hc *HttpClient) SendRoundNum(ctx context.Context, wg *sync.WaitGroup, roundNum int, to ...string) {
+func (hc *HttpClient) SendRoundNum(ctx context.Context, wg *sync.WaitGroup, roundNum int, to ...peer.Peer) {
 	defer wg.Done()
 	for _, s := range to {
-		url := s + baseUrl + "/sync/round/" + strconv.Itoa(roundNum)
-		req, err := http.NewRequestWithContext(ctx, "GET", url, nil)
-		if err != nil {
-			logger.Trace("Bad request  " + err.Error())
-			return
-		}
-		hc.SendHttp(req, "sync-roundNum", traceData("Sync Round "+strconv.Itoa(roundNum)))
+		wg.Add(1)
+		go func(s string) {
+			defer wg.Done()
+			url := s + baseUrl + "/sync/round/" + strconv.Itoa(roundNum)
+			req, err := http.NewRequestWithContext(ctx, "GET", url, nil)
+			if err != nil {
+				logger.Trace("Bad request  " + err.Error())
+				return
+			}
+			hc.SendHttp(req, "sync-roundNum", traceData("Sync Round "+strconv.Itoa(roundNum)))
+		}(s.HttpAddr())
 	}
 }

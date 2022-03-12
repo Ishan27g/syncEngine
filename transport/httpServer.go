@@ -2,15 +2,16 @@ package transport
 
 import (
 	"context"
-	"fmt"
 	"net"
 	"net/http"
 	"strconv"
 	"time"
 
+	"github.com/Ishan27g/go-utils/mLogger"
 	gossip "github.com/Ishan27g/gossipProtocol"
 	"github.com/Ishan27g/vClock"
 	"github.com/gin-gonic/gin"
+	"github.com/hashicorp/go-hclog"
 	"go.opentelemetry.io/contrib/instrumentation/github.com/gin-gonic/gin/otelgin"
 	"go.opentelemetry.io/otel/trace"
 
@@ -37,6 +38,9 @@ type HttpSrv struct {
 	GetPacket        func(id string) *gossip.Packet
 	SendGossip       func(data string)
 	RoundNumCb       func(roundNum int)
+
+	FollowerListCb func() []peer.State
+	hclog.Logger
 }
 
 func (h *HttpSrv) handlePing(c *gin.Context) {
@@ -138,17 +142,17 @@ func (h *HttpSrv) syncLeaderHb(c *gin.Context) {
 func (h *HttpSrv) Start(ctx context.Context, listener net.Listener) {
 	go func() {
 		go func() {
-//			fmt.Println("HTTP started on " + listener.Addr().String())
-			fmt.Println("HTTP started on " + h.httpSrv.Addr)
+			//			fmt.Println("HTTP started on " + listener.Addr().String())
+			h.Info("HTTP started on " + h.httpSrv.Addr)
 			if err := h.httpSrv.ListenAndServe(); err != nil && err != http.ErrServerClosed {
-				fmt.Println("HTTP", err.Error())
+				h.Error(err.Error())
 			}
 		}()
 		<-ctx.Done()
 		cx, can := context.WithTimeout(ctx, 2*time.Second)
 		defer can()
 		if err := h.httpSrv.Shutdown(cx); err != nil {
-			fmt.Println("Http-Shutdown " + err.Error())
+			h.Warn("Http-Shutdown " + err.Error())
 		}
 	}()
 
@@ -161,8 +165,7 @@ func (h *HttpSrv) sendGossip(c *gin.Context) {
 
 func (h *HttpSrv) syncRoundNum(c *gin.Context) {
 	roundNum, err := strconv.Atoi(c.Param("num"))
-	fmt.Println("updating round num")
-	if err == nil{
+	if err == nil {
 		h.RoundNumCb(roundNum)
 		c.String(200, "ok")
 		return
@@ -170,7 +173,17 @@ func (h *HttpSrv) syncRoundNum(c *gin.Context) {
 	c.String(http.StatusBadRequest, "")
 }
 
-func WithRoundNumCb(cb func(roundNum int) ) HTTPCbs {
+func (h *HttpSrv) followerList(c *gin.Context) {
+	c.JSON(http.StatusOK, h.FollowerListCb())
+}
+
+func WithFollowerListCb(cb func() []peer.State) HTTPCbs {
+	return func(srv *HttpSrv) {
+		srv.FollowerListCb = cb
+	}
+}
+
+func WithRoundNumCb(cb func(roundNum int)) HTTPCbs {
 	return func(srv *HttpSrv) {
 		srv.RoundNumCb = cb
 	}
@@ -225,6 +238,7 @@ func NewHttpSrv(port string, tracerId string, cbs ...HTTPCbs) *HttpSrv {
 	for _, cb := range cbs {
 		cb(h)
 	}
+	h.Logger = mLogger.Get("http" + port)
 	httpSrv := &http.Server{
 		Addr:    port,
 		Handler: nil,
@@ -235,8 +249,10 @@ func NewHttpSrv(port string, tracerId string, cbs ...HTTPCbs) *HttpSrv {
 
 	g.Use(otelgin.Middleware(tracerId))
 
+	g.Handle("GET", "/followers", h.followerList)
 	g.Handle("GET", "/engine/ping", func(c *gin.Context) {
-		c.JSON(http.StatusOK, nil)
+		state := *h.State()
+		c.JSON(http.StatusOK, &gin.H{"SyncLeader": state.SyncLeader, "RaftLeader": state.RaftLeader})
 	})
 	g.Handle("GET", "/engine/whoAmI", h.handlePing)
 	g.Handle("POST", "/engine/whoAmI", h.handleZoneFollowPing)

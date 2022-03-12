@@ -4,13 +4,13 @@ go 1.17
 
 require (
 	github.com/Ishan27g/go-utils/mLogger v0.0.0-20220308132511-ad5f5c0e8f14
-	github.com/Ishan27g/gossipProtocol v0.0.0-20220311053814-1eeb81c3a4e5
-	github.com/Ishan27g/registry/golang/registry v0.0.0-20220221134523-b13bddd19368
+	github.com/Ishan27g/gossipProtocol v0.0.0-20220312144139-be2ebbef55f2
+	github.com/Ishan27g/registry/golang/registry v0.0.0-20220312143626-5ce43317837b
 	github.com/Ishan27g/vClock v0.0.0-20220221133617-fae27884de39
-	github.com/bxcodec/faker/v3 v3.7.0
+	github.com/bxcodec/faker/v3 v3.8.0
 	github.com/emirpasic/gods v1.12.0
 	github.com/gin-gonic/gin v1.7.7
-	github.com/hashicorp/go-hclog v1.1.0
+	github.com/hashicorp/go-hclog v1.2.0
 	github.com/joho/godotenv v1.4.0
 	github.com/soheilhy/cmux v0.1.5
 	github.com/stretchr/testify v1.7.0
@@ -22,7 +22,7 @@ require (
 	go.opentelemetry.io/otel/exporters/jaeger v1.4.1
 	go.opentelemetry.io/otel/sdk v1.4.1
 	go.opentelemetry.io/otel/trace v1.4.1
-	google.golang.org/grpc v1.44.0
+	google.golang.org/grpc v1.45.0
 	google.golang.org/protobuf v1.27.1
 )
 

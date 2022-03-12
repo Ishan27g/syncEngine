@@ -20,8 +20,8 @@ type Engine struct {
 	self     peer.Peer
 	DataFile string
 
-	zonePeers          map[string]*peer.Peer
-	syncPeers          map[string]*peer.Peer
+	zonePeers          map[string]*peer.State
+	syncPeers          map[string]*peer.State
 	zoneRaft           Raft
 	hbFromRaftLeader   chan peer.Peer
 	votedForRaftLeader chan peer.Peer
@@ -66,19 +66,34 @@ func (e *Engine) Start() {
 		e.zoneRaft.Start()
 	}()
 }
-func (e *Engine) AddSyncFollower(peer peer.Peer) {
-	if e.syncPeers[peer.HttpAddr()] == nil {
-		e.syncPeers[peer.HttpAddr()] = &peer
+func (e *Engine) AddSyncFollower(p peer.State) {
+	if e.syncPeers[p.Self.HttpAddr()] == nil {
+		e.syncPeers[p.Self.HttpAddr()] = &peer.State{
+			Self:       p.Self,
+			RaftLeader: p.RaftLeader,
+			SyncLeader: p.SyncLeader,
+		}
 	}
 }
 
-func (e *Engine) AddFollower(peer peer.Peer) {
-	if e.zonePeers[peer.HttpAddr()] == nil {
-		e.zonePeers[peer.HttpAddr()] = &peer
+func (e *Engine) AddFollower(p peer.State) {
+	if e.zonePeers[p.Self.HttpAddr()] == nil {
+		e.zonePeers[p.Self.HttpAddr()] = &peer.State{
+			Self:       p.Self,
+			RaftLeader: p.RaftLeader,
+			SyncLeader: p.SyncLeader,
+		}
 	}
 }
-func (e *Engine) GetFollowers() []peer.Peer {
-	var f []peer.Peer
+func (e *Engine) GetFollowers(asPeer bool) interface{} {
+	if asPeer {
+		var f []peer.Peer
+		for _, v := range e.zonePeers {
+			f = append(f, v.Self)
+		}
+		return f
+	}
+	var f []peer.State
 	for _, v := range e.zonePeers {
 		f = append(f, *v)
 	}
@@ -87,7 +102,7 @@ func (e *Engine) GetFollowers() []peer.Peer {
 func (e *Engine) GetSyncFollowers() []peer.Peer {
 	var f []peer.Peer
 	for _, v := range e.syncPeers {
-		f = append(f, *v)
+		f = append(f, v.Self)
 	}
 	return f
 }
@@ -100,8 +115,8 @@ func Init(self peer.Peer, hClient *transport.HttpClient) *Engine {
 		Logger:             mLogger.Get(self.HttpPort),
 		zoneRaft:           nil,
 		syncRaft:           nil,
-		zonePeers:          make(map[string]*peer.Peer),
-		syncPeers:          make(map[string]*peer.Peer),
+		zonePeers:          make(map[string]*peer.State),
+		syncPeers:          make(map[string]*peer.State),
 		HClient:            hClient,
 		votedForRaftLeader: make(chan peer.Peer),
 		votedForSyncLeader: make(chan peer.Peer),
@@ -151,12 +166,29 @@ func Init(self peer.Peer, hClient *transport.HttpClient) *Engine {
 		// only once, start zoneRaft hbs when elected as leader
 		startSync.Do(e.startSyncRaft(syncLeader))
 		// send hbs to followers
-		//peers :=
-		e.HClient.SendZoneHeartBeat(e.Self(), e.GetFollowers()...)
-		//e.Trace("sent zone Hb to followers-" + fmt.Sprintf("%v", peers))
+		runningFollowers := e.HClient.SendZoneHeartBeat(e.Self(), e.GetFollowers(true).([]peer.Peer)...)
+		e.resetFollowers(true, runningFollowers)
 	})
 
 	return e
+}
+
+func (e *Engine) resetFollowers(zone bool, runningFollowers []*peer.State) {
+	if zone {
+		e.zonePeers = make(map[string]*peer.State)
+		for _, follower := range runningFollowers {
+			if follower != nil {
+				e.AddFollower(*follower)
+			}
+		}
+	} else {
+		e.syncPeers = make(map[string]*peer.State)
+		for _, follower := range runningFollowers {
+			if follower != nil {
+				e.AddSyncFollower(*follower)
+			}
+		}
+	}
 }
 
 func DataFile(self peer.Peer) string {
@@ -190,6 +222,7 @@ func (e *Engine) startSyncRaft(syncLeader peer.Peer) func() {
 		// 	e.Info("Becoming syncLeader for ", "zone", self.Zone)
 		// 	syncLeader = e.self
 		// }
+		e.Info("Starting Sync-Raft")
 		e.self.Mode = peer.FOLLOWER // syncMode follower
 		e.syncRaft = InitRaft(1, e.votedForSyncLeader, e.hbFromSyncLeader, e.self, &syncLeader, e.syncHbs())
 		e.self.Mode = peer.LEADER
@@ -204,9 +237,10 @@ func (e *Engine) syncHbs() func() {
 		//leaders := transport.DiscoverRaftLeaders(self.Zone) // todo?
 		var httpAddr []string
 		for _, peer := range e.syncPeers {
-			httpAddr = append(httpAddr, peer.HttpAddr())
+			httpAddr = append(httpAddr, peer.Self.HttpAddr())
 		}
-		e.HClient.SendSyncLeaderHb(e.Self(), httpAddr...)
+		runningSyncFollowers := e.HClient.SendSyncLeaderHb(e.Self(), httpAddr...)
 		//e.Trace("Sent sync Hb to leaders-" + fmt.Sprintf("%v", httpAddr))
+		e.resetFollowers(false, runningSyncFollowers)
 	}
 }

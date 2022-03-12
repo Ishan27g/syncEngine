@@ -118,7 +118,6 @@ func (r *raft) tryElection() bool {
 	}
 
 	voted := r.election(grpcs, term)
-	fmt.Println(voted)
 	if voted {
 		r.self.Mode = peer.LEADER
 		r.setTerm(termCount)
@@ -188,6 +187,7 @@ func (r *raft) waitOnHbs() {
 					goto wait
 				}
 				if r.tryElection() {
+					r.Warn("Elected Zone Leader")
 					r.sendHbs()
 					return
 				} else {
