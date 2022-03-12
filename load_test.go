@@ -42,7 +42,7 @@ func Test_Gossip_Load_Multiple_Rounds(t *testing.T) {
 					sentOrder <- data
 				}(i)
 				<-time.After(100 + randomInt())
-				data := "data " + strconv.Itoa(i+1+1)
+				data := "data " + strconv.Itoa(i+1)
 				nw.allProcesses[l].sendData(false, data)
 				sentOrder <- data
 			}(i)
@@ -85,7 +85,7 @@ func Test_Gossip_Load_Single_Round(t *testing.T) {
 					sentOrder <- data
 				}(i)
 				<-time.After(randomInt())
-				data := "data " + strconv.Itoa(i+1+1)
+				data := "data " + strconv.Itoa(i+1)
 				nw.allProcesses[l].sendData(false, data)
 				sentOrder <- data
 			}(i)

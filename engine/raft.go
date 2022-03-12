@@ -116,8 +116,12 @@ func (r *raft) tryElection() bool {
 		LeaderGrpcPort: r.self.GrpcPort,
 		LeaderHostname: r.self.GrpcPort,
 	}
-
-	voted := r.election(grpcs, term)
+	var voted = false
+	if len(grpcs) == 0 {
+		voted = true
+	} else {
+		voted = r.election(grpcs, term)
+	}
 	if voted {
 		r.self.Mode = peer.LEADER
 		r.setTerm(termCount)

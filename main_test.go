@@ -126,7 +126,7 @@ func setupNetwork(ctx context.Context, leaders ...string) network {
 	for _, leader := range leaders {
 		followers := envFiles[leader]
 		dm, gm, _ := Start(ctx, leader)
-
+		go discardGossipReceived(gm)
 		n.allProcesses[leader] = new(zone)
 		n.allProcesses[leader].leader = process{
 			dm: dm,
@@ -138,9 +138,17 @@ func setupNetwork(ctx context.Context, leaders ...string) network {
 				dm: dm,
 				gm: gm,
 			})
+			go discardGossipReceived(gm)
 		}
 	}
+	<-time.After(1 * time.Second)
 	return n
+}
+
+func discardGossipReceived(gm *gossipManager) {
+	for {
+		<-gm.rcv
+	}
 }
 func randomInt() time.Duration {
 	return time.Duration(rand.Intn(1000))
@@ -174,7 +182,7 @@ func Test_Single_Round(t *testing.T) {
 					sentOrder <- data
 				}(i)
 				<-time.After(randomInt())
-				data := "data " + strconv.Itoa(i+1+1)
+				data := "data " + strconv.Itoa(i+1)
 				nw.allProcesses[l].sendData(false, data)
 				sentOrder <- data
 			}(i)
@@ -225,11 +233,11 @@ func Test_Multiple_Rounds(t *testing.T) {
 					sentOrder <- data
 				}(i)
 				<-time.After(randomInt())
-				data := "data " + strconv.Itoa(i+1+1)
+				data := "data " + strconv.Itoa(i+2)
 				nw.allProcesses[l].sendData(false, data)
 				sentOrder <- data
 				<-time.After(randomInt())
-				data = "data " + strconv.Itoa(i+1+1+1)
+				data = "data " + strconv.Itoa(i+3)
 				nw.allProcesses[l].sendData(false, data)
 				sentOrder <- data
 			}(i)

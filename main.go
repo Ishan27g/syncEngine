@@ -188,7 +188,7 @@ init:
 		httpServer.Start(ctxInit, nil)
 		eng.Start()
 
-		<-time.After(engine.Monitor_Timeout)
+		<-time.After(engine.Hb_Timeout)
 
 		dm.Info("started...", "isZoneLeader", dm.isZoneLeader(), "isSyncLeader", dm.isSyncLeader())
 	}
