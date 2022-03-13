@@ -10,7 +10,7 @@ type gossipManager struct {
 }
 
 func newGossipManager(gsp gossip.Gossip, rcv <-chan gossip.Packet) gossipManager {
-	gm := gossipManager{gsp: gsp, rcv: make(chan gossip.Packet, 10)}
+	gm := gossipManager{gsp: gsp, rcv: make(chan gossip.Packet, gossipBuffer)}
 	go func() {
 		for {
 			gm.rcv <- <-rcv

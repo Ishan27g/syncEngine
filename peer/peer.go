@@ -39,6 +39,9 @@ func (p *Peer) UdpAddr() string {
 	return host + ":" + p.UdpPort
 }
 func (p *Peer) HttpAddr() string {
+	if p.HostName == "" || p.HttpPort == "" {
+		return ""
+	}
 	host := "http://" + p.HostName
 	return host + p.HttpPort
 }

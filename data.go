@@ -19,7 +19,11 @@ import (
 	"github.com/Ishan27g/syncEngine/utils"
 )
 
-var syncDelay = 3000 * time.Millisecond
+const (
+	syncDelay       = 3000 * time.Millisecond
+	RoundResolution = 1 // or the num of messages per round ~ number of events that will be ordered
+	gossipBuffer    = 100
+)
 
 type dataManager struct {
 	vm data.VersionAbleI
@@ -51,11 +55,8 @@ func (dm *dataManager) isSyncLeader() bool {
 
 func (dm *dataManager) saveSnapshot() {
 	if !dm.canSnapshot() {
-		go func() {
-			<-time.After(1 * time.Second)
-			dm.saveSnapshot()
-		}()
-		return
+		<-time.After(1 * time.Second)
+		dm.saveSnapshot()
 	}
 	entries := utils.OrderToEntries(dm.Data.GetOrderedPackets()...)
 	currentHash := utils.DefaultHash(entries)
@@ -264,7 +265,7 @@ func (dm *dataManager) applyOrderAtPeers(ctx1 context.Context, cancel context.Ca
 		return false
 	}
 	fo := utils.EventsToOrder(dm.Events.GetOrder())
-	// send calculated order to other leaders and zone followers
+	// send calculated order to other leaders and Zone followers
 	for _, l := range dm.syncPeers() {
 		wg.Add(1)
 		go func(wg *sync.WaitGroup, l peer.Peer) {
@@ -272,7 +273,7 @@ func (dm *dataManager) applyOrderAtPeers(ctx1 context.Context, cancel context.Ca
 			c := transport.NewDataSyncClient(ctx1, l.GrpcAddr())
 			_, err := c.SaveOrder(ctx1, fo)
 			if err != nil {
-				dm.Warn("Error from", "zone-leader", l.GrpcAddr())
+				dm.Warn("Error from", "Zone-leader", l.GrpcAddr())
 				fmt.Println(err.Error())
 			}
 		}(wg, l)

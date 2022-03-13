@@ -58,7 +58,6 @@ func (s *snapShot) Sync(entry ...Entry) {
 }
 
 func (s *snapShot) Round() {
-	// appendFile(s.file, "\n", s.)
 	s.readLen = getSize(s.file)
 	s.roundNum++
 }
