@@ -42,7 +42,9 @@ func (p *Packet) GetVersion() int {
 func (p *Packet) GetData() string {
 	return p.GossipMessage.Data
 }
-
+func (p *Packet) UpdateGossipAt() {
+	p.GossipMessage.CreatedAt = time.Now().UTC()
+}
 func gossipToByte(g gossipMessage, from Peer, clock vClock.EventClock) []byte {
 	packet := gossipToPacket(g, from.ProcessIdentifier, clock)
 	udp := packetToUdp(*packet, from)

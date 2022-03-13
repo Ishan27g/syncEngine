@@ -16,8 +16,7 @@ type Gossip interface {
 	// SendGossip  to the network
 	SendGossip(data string)
 	// CurrentView returned as a String
-	// CurrentView() string
-
+	CurrentView() map[string]Peer
 }
 
 type gossip struct {
@@ -36,8 +35,8 @@ type gossip struct {
 	gossipToUser chan Packet
 }
 
-func (g *gossip) CurrentView() string {
-	return g.sampling.printView()
+func (g *gossip) CurrentView() map[string]Peer {
+	return toMap(g.sampling.getView(), g.selfDescriptor.ProcessIdentifier)
 }
 
 func (g *gossip) Join(initialPeers ...Peer) {
@@ -57,10 +56,12 @@ func (g *gossip) SendGossip(data string) {
 	newPacket := g.savePacket(&gP)
 	g.lock.Unlock()
 	g.newGossip(newPacket, gP, g.selfDescriptor)
+	g.allGossip[gP.GetId()].UpdateGossipAt()
 }
 
 // from peer
 func (g *gossip) serverCb(gP Packet, from Peer) []byte {
+        
 	g.lock.Lock()
 	newPacket := g.savePacket(&gP)
 	(*g.allEvents).ReceiveEvent(gP.GetId(), gP.VectorClock)
@@ -74,6 +75,7 @@ func (g *gossip) newGossip(newPacket bool, gP Packet, from Peer) {
 		g.startRounds(gP.GossipMessage, from)
 		g.lock.Lock()
 		gP.VectorClock = (*g.allEvents).Get(gP.GetId()) // update packet's clock
+		gP = *g.allGossip[gP.GetId()]
 		g.lock.Unlock()
 		g.gossipToUser <- gP
 	}
@@ -108,7 +110,19 @@ func (g *gossip) fanOut(gm gossipMessage, exclude Peer) {
 		return
 	}
 	for i := 0; i < g.env.FanOut; i++ {
+		if i == g.sampling.Size() {
+			// fmt.Println("no more peers")
+			return
+		}
 		peer := g.sampling.GetPeer(exclude)
+		if peer.UdpAddress == "" {
+			// fmt.Println("no peer")
+			return
+		}
+		// if from the only other peer in nw, dont gossip back
+		if peer.ProcessIdentifier == exclude.ProcessIdentifier && g.sampling.Size() == 1 {
+			return
+		}
 		if peer.UdpAddress != "" && peer.ProcessIdentifier != g.selfDescriptor.ProcessIdentifier {
 			g.lock.Lock()
 			tmp := vClock.Copy(*g.allEvents)
@@ -125,7 +139,6 @@ func (g *gossip) fanOut(gm gossipMessage, exclude Peer) {
 				(*g.allEvents).SendEvent(id, nil)
 				g.lock.Unlock()
 			}
-
 		}
 	}
 }
@@ -146,7 +159,7 @@ func Config(hostname string, port string, id string) (Gossip, <-chan Packet) {
 		allGossip:    make(map[string]*Packet),
 		allEvents:    new(vClock.VectorClock),
 		gossipToUser: make(chan Packet, 100),
-		sampling:     initSampling(port, id, defaultStrategy),
+		sampling:     initSampling(hostname+":"+port, id, defaultStrategy),
 	}
 	*g.allEvents = vClock.Init(id)
 	return &g, g.gossipToUser

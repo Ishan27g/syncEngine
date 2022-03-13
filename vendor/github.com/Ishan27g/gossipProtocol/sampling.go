@@ -8,11 +8,6 @@ import (
 	sll "github.com/emirpasic/gods/lists/singlylinkedlist"
 )
 
-const (
-	ViewExchangeDelay = 3 * time.Second // timeout after which a View  is exchanged with a peer
-	MaxNodesInView    = 6               // max peers kept in local View TODO MaxNodesInView=6
-)
-
 type iSampling interface {
 	SetInitialPeers(...Peer)
 	Start()
@@ -86,7 +81,7 @@ func (s *sampling) selectView(view *View) {
 }
 
 func (s *sampling) passive() {
-	wait := 5 * time.Second
+	wait := ViewExchangeDelay
 	for {
 		select {
 		case <-s.ctx.Done():
@@ -98,7 +93,8 @@ func (s *sampling) passive() {
 			if nwPeer.UdpAddress == "" {
 				continue
 			}
-			if s.strategy.ViewPropagationStrategy == Push || s.strategy.ViewPropagationStrategy == PushPull {
+			switch s.strategy.ViewPropagationStrategy {
+			case Push, PushPull:
 				mergedView := MergeView(s.view, selfDescriptor(s.selfDescriptor))
 				buffer := ViewToBytes(mergedView, s.knownPeers[s.selfDescriptor.ProcessIdentifier])
 				rspView, from, err := BytesToView(s.udpClient.send(nwPeer.UdpAddress, buffer))
@@ -108,7 +104,7 @@ func (s *sampling) passive() {
 				} else {
 					s.removePeer(nwPeer)
 				}
-			} else {
+			default:
 				// send emptyView to nwPeer to trigger response
 				rspView, from, err := BytesToView(s.udpClient.send(nwPeer.UdpAddress,
 					ViewToBytes(View{Nodes: sll.New()}, s.knownPeers[s.selfDescriptor.ProcessIdentifier])))
@@ -119,7 +115,8 @@ func (s *sampling) passive() {
 					s.removePeer(nwPeer)
 				}
 			}
-			if s.strategy.ViewPropagationStrategy == Pull || s.strategy.ViewPropagationStrategy == PushPull {
+			switch s.strategy.ViewPropagationStrategy {
+			case PushPull, Pull:
 				if receivedView.Nodes != nil {
 					increaseHopCount(receivedView)
 					mergedView := mergeViewExcludeNode(s.view, *receivedView, s.selfDescriptor)
@@ -138,6 +135,7 @@ func (s *sampling) ViewFromPeer(receivedView View, peer Peer) []byte {
 		mergedView := MergeView(s.view, selfDescriptor(s.selfDescriptor))
 		rsp = ViewToBytes(mergedView, s.knownPeers[s.selfDescriptor.ProcessIdentifier])
 	}
+
 	merged := mergeViewExcludeNode(s.view, receivedView, s.selfDescriptor)
 	s.selectView(&merged)
 	return rsp // empty incase of PUSH
@@ -145,7 +143,9 @@ func (s *sampling) ViewFromPeer(receivedView View, peer Peer) []byte {
 
 func (s *sampling) AddPeer(peer ...Peer) {
 	for _, p := range peer {
+		//	if p.ProcessIdentifier != s.selfDescriptor.ProcessIdentifier {
 		s.addPeerToView(p)
+		//	}
 	}
 	s.selectView(&s.view)
 }
@@ -160,18 +160,20 @@ selectPeer:
 	{
 		node = s.view.randomNode()
 	}
-
+	if s.Size() == 2 && node.ProcessIdentifier == exclude.ProcessIdentifier {
+		return Peer{}
+	}
 	if node.ProcessIdentifier == s.selfDescriptor.ProcessIdentifier {
 		goto selectPeer
 	}
-	if s.previousPeer.ProcessIdentifier == Peer(node).ProcessIdentifier && s.Size() != 1 {
+	if s.previousPeer.ProcessIdentifier == node.ProcessIdentifier && s.Size() != 1 {
 		goto selectPeer
 	}
-	if exclude.ProcessIdentifier == Peer(node).ProcessIdentifier && s.Size() != 1 {
+	if exclude.ProcessIdentifier == node.ProcessIdentifier && s.Size() != 1 {
 		goto selectPeer
 	}
 
-	s.previousPeer = Peer(node)
+	s.previousPeer = node
 	return s.previousPeer
 }
 
