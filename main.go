@@ -53,7 +53,7 @@ func getData(eng *engine.Engine, dm *dataManager) func() transport.SyncRsp {
 	}
 }
 
-func Start(ctx context.Context, envFile string) (*dataManager, *gossipManager, *provider.JaegerProvider) {
+func Start(ctx context.Context, envFile string) (*dataManager, *gossipManager, *provider.TraceProvider) {
 	mLogger.Apply(mLogger.Level(hclog.Trace), mLogger.Color(true))
 
 	var self peer.Peer
@@ -61,18 +61,16 @@ func Start(ctx context.Context, envFile string) (*dataManager, *gossipManager, *
 
 	//self.GrpcPort = self.HttpPort
 
-	tracerId := self.HttpAddr()
+	tracerId := self.HostName + self.HttpPort
+	//	tracerId := self.HttpAddr()
 
-	//url := "http://localhost:14268/api/traces"
+	jp := provider.Init("zipkin", tracerId, self.FakeName)
+	go func(ctx context.Context, jp provider.TraceProvider) {
+		<-ctx.Done()
+		jp.Close()
+	}(ctx, jp)
 
-	// jp := provider.InitJaeger(context.Background(), tracerId, self.HttpPort, url)
-	// go func(ctx context.Context, jp *provider.JaegerProvider) {
-	// 	<-ctx.Done()
-	// 	jp.Close()
-	// }(ctx, jp)
-
-	// hClient := transport.NewHttpClient(self.HttpPort, jp.Get().Tracer(tracerId))
-	hClient := transport.NewHttpClient(self.HttpPort, nil)
+	hClient := transport.NewHttpClient(tracerId, jp.Get().Tracer(tracerId))
 
 	var eng *engine.Engine
 	var dm dataManager
@@ -214,6 +212,7 @@ init:
 			cancelInit()
 			goto init
 		}
+		dm.Warn("FUCk", "dm.state().SyncLeader.HttpAddr()", dm.state().SyncLeader.HttpAddr())
 		hClient.SendSyncRequest(dm.state().SyncLeader.HttpAddr(), &initialEventOrder, &entries, dm.state().Self)
 		c := transport.NewDataSyncClient(ctx1, dm.state().SyncLeader.GrpcAddr())
 		p, _ = c.GetNetworkView(ctx1, &proto.Ok{})

@@ -8,7 +8,6 @@ import (
 
 	"github.com/Ishan27g/go-utils/mLogger"
 	"github.com/hashicorp/go-hclog"
-	"go.opentelemetry.io/contrib/instrumentation/google.golang.org/grpc/otelgrpc"
 	"google.golang.org/grpc"
 
 	"github.com/Ishan27g/syncEngine/proto"
@@ -67,8 +66,8 @@ func (r *RpcServer) Start(ctx context.Context, listener net.Listener) {
 	go func() {
 		grpcServer := grpc.NewServer(
 			grpc.ConnectionTimeout(ConnectionTimeout),
-			grpc.UnaryInterceptor(otelgrpc.UnaryServerInterceptor()),
-			grpc.StreamInterceptor(otelgrpc.StreamServerInterceptor()),
+			//grpc.UnaryInterceptor(otelgrpc.UnaryServerInterceptor()),
+			//grpc.StreamInterceptor(otelgrpc.StreamServerInterceptor()),
 		)
 		proto.RegisterRaftVotingServer(grpcServer, r.votingServer)
 		proto.RegisterDataSyncServer(grpcServer, r.dataServer)

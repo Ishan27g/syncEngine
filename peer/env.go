@@ -4,7 +4,6 @@ import (
 	"fmt"
 	"strconv"
 
-	faker "github.com/bxcodec/faker/v3"
 	"github.com/joho/godotenv"
 )
 
@@ -18,7 +17,8 @@ type engineEnv struct {
 	GrpcPort string `env:"GRPC_PORT,required"` // raft
 	UdpPort  string `env:"UDP_PORT,required"`  // gossip & views
 
-	Self Peer
+	TempName string `env:"TempName"`
+	Self     Peer
 }
 
 func InitEnv(envFile string) *engineEnv {
@@ -39,13 +39,14 @@ func InitEnv(envFile string) *engineEnv {
 		HttpPort:     envMap["HTTP_PORT"],
 		GrpcPort:     envMap["GRPC_PORT"],
 		UdpPort:      envMap["UDP_PORT"],
+		TempName:     envMap["TempName"],
 		Self:         Peer{},
 	}
 	if e.Hostname == "" {
 		e.Hostname = "localhost"
 	}
 	e.Self = Peer{
-		FakeName: faker.FirstName(),
+		FakeName: e.TempName,
 		Zone:     e.Zone,
 		HostName: e.Hostname,
 		HttpPort: ":" + e.HttpPort,
@@ -57,4 +58,3 @@ func InitEnv(envFile string) *engineEnv {
 	}
 	return &e
 }
-

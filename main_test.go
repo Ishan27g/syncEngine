@@ -158,28 +158,28 @@ func randomInt() time.Duration {
 	return time.Duration(rand.Intn(1000))
 }
 
-//
-//func Test_Gossip_AtLeader(t *testing.T) {
-//	l := envFile + "1.leader.env"
-//	ctx, can := context.WithCancel(context.Background())
-//	defer can()
-//
-//	nw := setupNetwork(ctx, l)
-//	defer registry.ShutDown()
-//
-//	var numMessages = 2
-//	var so []string
-//
-//	<-time.After(1 * time.Second)
-//	for i := 0; i < numMessages; i++ {
-//		data := "data " + strconv.Itoa(i)
-//		nw.allProcesses[l].sendData(false, data)
-//		so = append(so, data)
-//	}
-//	<-time.After(5 * time.Second)
-//	nw.allProcesses[l].matchSnapshot(t, so)
-//
-//}
+func Test_Gossip_AtFollowers(t *testing.T) {
+	l := envFile + "1.leader.env"
+	ctx, can := context.WithCancel(context.Background())
+	defer can()
+
+	nw := setupNetwork(ctx, l)
+	defer registry.ShutDown()
+
+	var numMessages = 1
+	var so []string
+
+	<-time.After(1 * time.Second)
+	for i := 0; i < numMessages; i++ {
+		data := "data " + strconv.Itoa(i)
+		nw.allProcesses[l].sendData(false, data)
+		so = append(so, data)
+	}
+	<-time.After(5 * time.Second)
+	nw.allProcesses[l].matchSnapshot(t, so)
+
+}
+
 //func Test_Single_Round(t *testing.T) {
 //	l := envFile + "1.leader.env"
 //	ctx, can := context.WithCancel(context.Background())

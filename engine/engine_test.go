@@ -1,7 +1,6 @@
 package engine
 
 import (
-	"context"
 	"testing"
 	"time"
 
@@ -29,10 +28,9 @@ func TestInit(t *testing.T) {
 	var self peer.Peer
 	self, transport.RegistryUrl = peer.FromEnv(envFile)
 
-	url := "http://localhost:14268/api/traces"
 	tracerId := self.HttpAddr()
 
-	jp := provider.InitJaeger(context.Background(), tracerId, self.HttpPort, url)
+	jp := provider.Init("jaeger", tracerId, self.HttpPort)
 	defer jp.Close()
 
 	hClient := transport.NewHttpClient(self.HttpPort, jp.Get().Tracer(tracerId))

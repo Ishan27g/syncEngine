@@ -16,6 +16,18 @@ services:
           cpus: '0.05'
           memory: 250M
 
+  zipkin:
+    hostname: zipkin
+    image: openzipkin/zipkin:2.23.15
+    networks:
+      sync_nw:
+    ports:
+      - "9411:9411"
+    deploy:
+      resources:
+        limits:
+          cpus: '0.05'
+          memory: 250M
 #  registry:
 #    image: sync-registry
 #    ports:
