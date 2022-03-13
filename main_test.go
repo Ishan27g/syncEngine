@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"testing"
 	"time"
 )
@@ -8,22 +9,31 @@ import (
 var singleRoundNumMessages = 16
 var zone1 = envFile + "1.leader.env"
 
-func Test_Round_AtLeader(t *testing.T) {
-	runTest(t, zone1, singleRoundNumMessages, atLeaderOnly, randomInt)
-}
-func Test_Round_AtFollowers(t *testing.T) {
-	runTest(t, zone1, singleRoundNumMessages, atFollowerOnly, randomInt)
-}
-func Test_Round_AtRandom(t *testing.T) {
-	runTest(t, zone1, singleRoundNumMessages, atAny, randomInt)
-}
+//
+//func Test_Round_AtLeader(t *testing.T) {
+//	ctx, can := context.WithCancel(context.Background())
+//	defer can()
+//	runTest(t, ctx, zone1, singleRoundNumMessages, atLeaderOnly, randomInt)
+//}
+//func Test_Round_AtFollowers(t *testing.T) {
+//	ctx, can := context.WithCancel(context.Background())
+//	defer can()
+//	runTest(t, ctx, zone1, singleRoundNumMessages, atFollowerOnly, randomInt)
+//}
+//func Test_Round_AtRandom(t *testing.T) {
+//	ctx, can := context.WithCancel(context.Background())
+//	defer can()
+//	runTest(t, ctx, zone1, singleRoundNumMessages, atAny, randomInt)
+//}
 func Test_Multiple_Rounds(t *testing.T) {
 
 	var numMessages = 16
 	var delay = delay(func() time.Duration {
 		return time.Second * 2
 	})
-	runTest(t, zone1, numMessages, atAny, delay)
+	ctx, can := context.WithCancel(context.Background())
+	defer can()
+	runTest(t, ctx, zone1, numMessages, atAny, delay)
 }
 
 // go test --v ./... -run Test_Round_AtLeader

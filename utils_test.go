@@ -203,13 +203,12 @@ func (nw *network) sendGossip(numMessages int, l string, at int, delay time.Dura
 	}
 }
 
-func runTest(t *testing.T, l string, numMessages int, at int, d delay) {
+func runTest(t *testing.T, ctx context.Context, l string, numMessages int, at int, d delay) {
 	if at == atAny && numMessages%2 != 0 {
 		fmt.Println("even number of messages")
 		os.Exit(1)
 	}
-	ctx, can := context.WithCancel(context.Background())
-	defer can()
+
 	nw := setupNetwork(ctx, l)
 	defer registry.ShutDown()
 
