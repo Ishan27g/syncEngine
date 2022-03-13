@@ -1,6 +1,8 @@
 package vClock
 
 import (
+	"sync"
+
 	"github.com/emirpasic/gods/lists/arraylist"
 	"github.com/iancoleman/orderedmap"
 )
@@ -29,9 +31,12 @@ type Event struct {
 // all events
 type events struct {
 	clocks *orderedmap.OrderedMap
+	sync.Mutex
 }
 
 func (e *events) GetCurrentEvents() []Event {
+	e.Lock()
+	defer e.Unlock()
 	var events []Event
 	keys := e.clocks.Keys()
 	for _, k := range keys {
@@ -45,6 +50,8 @@ func (e *events) GetCurrentEvents() []Event {
 }
 
 func (e *events) MergeEvents(ev ...Event) {
+	e.Lock()
+	defer e.Unlock()
 	for _, c := range ev {
 		e.MergeEvent(c)
 	}
@@ -103,6 +110,8 @@ func (e *events) MergeEvent(ev Event) {
 }
 
 func (e *events) GetEventsOrder() []Event {
+	e.Lock()
+	defer e.Unlock()
 	a := arraylist.New()
 	keys := e.clocks.Keys()
 	for _, k := range keys {

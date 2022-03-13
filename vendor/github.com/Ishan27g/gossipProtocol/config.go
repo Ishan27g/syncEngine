@@ -19,7 +19,7 @@ const (
 	gossipDelay       = 1 * time.Millisecond
 	rounds            = 1
 	fanOut            = 5
-	ViewExchangeDelay = 500 * time.Millisecond // timeout after which a View  is exchanged with a peer
+	ViewExchangeDelay = 200 * time.Millisecond // timeout after which a View  is exchanged with a peer
 	MaxNodesInView    = 6                      // max peers kept in local View TODO MaxNodesInView=6
 )
 

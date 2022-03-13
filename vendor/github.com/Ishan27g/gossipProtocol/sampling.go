@@ -6,6 +6,7 @@ import (
 	"time"
 
 	sll "github.com/emirpasic/gods/lists/singlylinkedlist"
+	cmap "github.com/orcaman/concurrent-map"
 )
 
 type iSampling interface {
@@ -25,8 +26,9 @@ type sampling struct {
 	strategy       PeerSamplingStrategy
 	view           View
 	selfDescriptor Peer
-	knownPeers     map[string]Peer
-	udpClient      client
+	// knownPeers     map[string]Peer
+	kp        cmap.ConcurrentMap
+	udpClient client
 
 	previousPeer Peer
 }
@@ -57,15 +59,19 @@ func (s *sampling) fillView(peers ...Peer) {
 }
 
 func (s *sampling) addPeerToView(peer Peer) {
-	if s.knownPeers[peer.ProcessIdentifier].ProcessIdentifier == "" {
-		s.view.add(peer)
-		s.knownPeers[peer.ProcessIdentifier] = peer
+	if !s.kp.Has(peer.ProcessIdentifier) {
+		s.kp.Set(peer.ProcessIdentifier, peer)
 	}
+	//if s.knownPeers[peer.ProcessIdentifier].ProcessIdentifier == "" {
+	//	s.view.add(peer)
+	//	s.knownPeers[peer.ProcessIdentifier] = peer
+	//}
 }
 
 func (s *sampling) removePeer(peer Peer) {
 	s.view.remove(peer)
-	delete(s.knownPeers, peer.ProcessIdentifier)
+	s.kp.Remove(peer.ProcessIdentifier)
+	// delete(s.knownPeers, peer.ProcessIdentifier)
 }
 func (s *sampling) selectView(view *View) {
 	switch s.strategy.ViewSelectionStrategy {
@@ -79,7 +85,12 @@ func (s *sampling) selectView(view *View) {
 
 	s.view = mergeViewExcludeNode(*view, *view, s.selfDescriptor)
 }
-
+func (s *sampling) getKnownPeer(id string) Peer {
+	if p, f := s.kp.Get(s.selfDescriptor.ProcessIdentifier); f {
+		return p.(Peer)
+	}
+	return Peer{}
+}
 func (s *sampling) passive() {
 	wait := ViewExchangeDelay
 	for {
@@ -96,10 +107,10 @@ func (s *sampling) passive() {
 			switch s.strategy.ViewPropagationStrategy {
 			case Push, PushPull:
 				mergedView := MergeView(s.view, selfDescriptor(s.selfDescriptor))
-				buffer := ViewToBytes(mergedView, s.knownPeers[s.selfDescriptor.ProcessIdentifier])
+				buffer := ViewToBytes(mergedView, s.getKnownPeer(s.selfDescriptor.ProcessIdentifier))
 				rspView, from, err := BytesToView(s.udpClient.send(nwPeer.UdpAddress, buffer))
 				if err == nil {
-					s.knownPeers[from.ProcessIdentifier] = from
+					s.kp.SetIfAbsent(from.ProcessIdentifier, from)
 					_ = &rspView // for PUSH -> []byte("OKAY")
 				} else {
 					s.removePeer(nwPeer)
@@ -107,9 +118,9 @@ func (s *sampling) passive() {
 			default:
 				// send emptyView to nwPeer to trigger response
 				rspView, from, err := BytesToView(s.udpClient.send(nwPeer.UdpAddress,
-					ViewToBytes(View{Nodes: sll.New()}, s.knownPeers[s.selfDescriptor.ProcessIdentifier])))
+					ViewToBytes(View{Nodes: sll.New()}, s.getKnownPeer(s.selfDescriptor.ProcessIdentifier))))
 				if err == nil {
-					s.knownPeers[from.ProcessIdentifier] = from
+					s.kp.SetIfAbsent(from.ProcessIdentifier, from)
 					receivedView = &rspView
 				} else {
 					s.removePeer(nwPeer)
@@ -128,12 +139,14 @@ func (s *sampling) passive() {
 }
 
 func (s *sampling) ViewFromPeer(receivedView View, peer Peer) []byte {
-	s.knownPeers[peer.ProcessIdentifier] = peer
+	s.kp.SetIfAbsent(peer.ProcessIdentifier, peer)
+
+	//s.knownPeers[peer.ProcessIdentifier] = peer
 	var rsp []byte
 	increaseHopCount(&receivedView)
 	if s.strategy.ViewPropagationStrategy == Pull || s.strategy.ViewPropagationStrategy == PushPull {
 		mergedView := MergeView(s.view, selfDescriptor(s.selfDescriptor))
-		rsp = ViewToBytes(mergedView, s.knownPeers[s.selfDescriptor.ProcessIdentifier])
+		rsp = ViewToBytes(mergedView, s.getKnownPeer(s.selfDescriptor.ProcessIdentifier))
 	}
 
 	merged := mergeViewExcludeNode(s.view, receivedView, s.selfDescriptor)
@@ -206,10 +219,12 @@ func initSampling(udpAddress string, identifier string, strategy PeerSamplingStr
 			Hop:               0,
 			ProcessIdentifier: identifier,
 		},
-		knownPeers:   make(map[string]Peer),
+		//knownPeers:   make(map[string]Peer),
 		udpClient:    getClient(identifier),
 		previousPeer: Peer{},
+		kp:           cmap.New(),
 	}
-	s.knownPeers[s.selfDescriptor.ProcessIdentifier] = Peer(s.selfDescriptor)
+	s.kp.Set(s.selfDescriptor.ProcessIdentifier, s.selfDescriptor)
+	//s.knownPeers[s.selfDescriptor.ProcessIdentifier] = Peer(s.selfDescriptor)
 	return &s
 }

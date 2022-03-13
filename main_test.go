@@ -21,7 +21,12 @@ func Test_Multiple_Rounds(t *testing.T) {
 
 	var numMessages = 32
 	var delay = delay(func() time.Duration {
-		return time.Second * 1
+		return time.Second * 2
 	})
 	runTest(t, zone1, numMessages, atAny, delay)
 }
+
+// go test --v ./... -run Test_Round_AtLeader
+// go test --v ./... -run Test_Round_AtFollowers
+// go test --v ./... -run Test_Round_AtRandom
+// go test --v ./... -run Test_Multiple_Rounds
