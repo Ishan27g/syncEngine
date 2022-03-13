@@ -1,7 +1,7 @@
-package main
+//go:build load
+// +build load
 
-// // go:build load
-// // +build load
+package main
 
 import (
 	"testing"

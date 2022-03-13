@@ -9,7 +9,7 @@ import (
 type Event struct {
 	lock   sync.Mutex
 	events vClock.Events
-	clocks map[string]vClock.EventClock
+	clocks map[string]vClock.EventClock // todo sync.Map
 }
 
 func InitEvents() Event {
