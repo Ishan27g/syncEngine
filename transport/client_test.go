@@ -14,9 +14,8 @@ func TestNewVotingClient(t *testing.T) {
 	defer cancel()
 	mockRpcServer(":9000").Start(ctx, nil)
 
-	rc := NewVotingClient("localhost:9000")
+	rc := NewVotingClient(ctx, "localhost:9000")
 	assert.NotNil(t, rc)
-	defer rc.Disconnect()
 
 	votes, err := rc.RequestVotes(ctx, &proto.Term{
 		TermCount:      0,

@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"fmt"
 	"io/ioutil"
 	"math/rand"
 	"os"
@@ -74,6 +75,7 @@ func (z *zone) matchSnapshot(t *testing.T, sentOrder []string) {
 			dataFiles = append(dataFiles, engine.DataFile(follower.self()))
 		}
 		compareEntries := func(t *testing.T, with []string, f1 string) {
+			// assert.Equal(t, len(with), len(snapshot.FromFile(f1).Get()))
 			//for i, entry := range snapshot.FromFile(f1).Get() {
 			//assert.Equal(t, with[i], entry.Data)
 			//}
@@ -101,11 +103,13 @@ func (z *zone) matchSnapshot(t *testing.T, sentOrder []string) {
 func (z *zone) sendData(toLeader bool, data string) {
 	if toLeader {
 		z.leader.gossip(data)
+		fmt.Println("Sent to leader", data)
 	} else {
 		rand.Seed(time.Now().Unix())
 		r := len(z.followers)
 		r = rand.Intn(r)
 		z.followers[r].gossip(data)
+		fmt.Println("Sent to follower", data)
 	}
 }
 
@@ -153,51 +157,76 @@ func discardGossipReceived(gm *gossipManager) {
 func randomInt() time.Duration {
 	return time.Duration(rand.Intn(1000))
 }
-func Test_Single_Round(t *testing.T) {
-	l := envFile + "1.leader.env"
-	ctx, can := context.WithCancel(context.Background())
-	defer can()
 
-	var numMessages = 10
-	nw := setupNetwork(ctx, l)
-	defer registry.ShutDown()
-
-	t.Run("Zone-"+l+" messages - "+strconv.Itoa(numMessages), func(t *testing.T) {
-		defer nw.allProcesses[l].removeFiles()
-
-		var sentOrder = make(chan string, numMessages)
-		var wg sync.WaitGroup
-
-		<-time.After(1 * time.Second)
-		for i := 0; i < numMessages; i += 2 {
-			wg.Add(2)
-			<-time.After(15 * time.Millisecond) // timeout between consecutive gossip requests at same process
-			go func(i int) {
-				defer wg.Done()
-				go func(i int) {
-					defer wg.Done()
-					<-time.After(randomInt())
-					data := "data " + strconv.Itoa(i)
-					nw.allProcesses[l].sendData(true, data)
-					sentOrder <- data
-				}(i)
-				<-time.After(randomInt())
-				data := "data " + strconv.Itoa(i+1)
-				nw.allProcesses[l].sendData(false, data)
-				sentOrder <- data
-			}(i)
-			wg.Wait()
-		}
-		close(sentOrder)
-		<-time.After(10 * time.Second)
-		var so []string
-		for s := range sentOrder {
-			so = append(so, s)
-		}
-		nw.allProcesses[l].matchSnapshot(t, so)
-	})
-
-}
+//
+//func Test_Gossip_AtLeader(t *testing.T) {
+//	l := envFile + "1.leader.env"
+//	ctx, can := context.WithCancel(context.Background())
+//	defer can()
+//
+//	nw := setupNetwork(ctx, l)
+//	defer registry.ShutDown()
+//
+//	var numMessages = 2
+//	var so []string
+//
+//	<-time.After(1 * time.Second)
+//	for i := 0; i < numMessages; i++ {
+//		data := "data " + strconv.Itoa(i)
+//		nw.allProcesses[l].sendData(false, data)
+//		so = append(so, data)
+//	}
+//	<-time.After(5 * time.Second)
+//	nw.allProcesses[l].matchSnapshot(t, so)
+//
+//}
+//func Test_Single_Round(t *testing.T) {
+//	l := envFile + "1.leader.env"
+//	ctx, can := context.WithCancel(context.Background())
+//	defer can()
+//
+//	var numMessages = 10
+//	nw := setupNetwork(ctx, l)
+//	defer registry.ShutDown()
+//
+//	t.Run("Zone-"+l+" messages - "+strconv.Itoa(numMessages), func(t *testing.T) {
+//		defer nw.allProcesses[l].removeFiles()
+//
+//		var sentOrder = make(chan string, numMessages)
+//		var wg sync.WaitGroup
+//
+//		<-time.After(1 * time.Second)
+//		for i := 0; i < numMessages; i += 2 {
+//			wg.Add(2)
+//			<-time.After(1 * time.Second)
+//			go func(i int) {
+//				defer wg.Done()
+//				go func(i int) {
+//					defer wg.Done()
+//					<-time.After(randomInt())
+//					data := "data " + strconv.Itoa(i)
+//					nw.allProcesses[l].sendData(true, data)
+//					sentOrder <- data
+//				}(i)
+//				<-time.After(3 * time.Second)
+//
+//				<-time.After(randomInt())
+//				data := "data " + strconv.Itoa(i+1)
+//				nw.allProcesses[l].sendData(false, data)
+//				sentOrder <- data
+//			}(i)
+//			wg.Wait()
+//		}
+//		close(sentOrder)
+//		<-time.After(10 * time.Second)
+//		var so []string
+//		for s := range sentOrder {
+//			so = append(so, s)
+//		}
+//		nw.allProcesses[l].matchSnapshot(t, so)
+//	})
+//
+//}
 
 func Test_Multiple_Rounds(t *testing.T) {
 
@@ -205,12 +234,12 @@ func Test_Multiple_Rounds(t *testing.T) {
 	ctx, can := context.WithCancel(context.Background())
 	defer can()
 
-	var numMessages = 16
+	var numMessages = 32
 	nw := setupNetwork(ctx, l)
 	defer registry.ShutDown()
 
 	t.Run("Zone-"+l+" messages - "+strconv.Itoa(numMessages), func(t *testing.T) {
-		defer nw.allProcesses[l].removeFiles()
+		// defer nw.allProcesses[l].removeFiles()
 
 		var sentOrder = make(chan string, numMessages)
 		var wg sync.WaitGroup

@@ -5,6 +5,7 @@ package main
 
 import (
 	"context"
+	"fmt"
 	"strconv"
 	"sync"
 	"testing"
@@ -26,12 +27,12 @@ func Test_Gossip_Load_Multiple_Rounds(t *testing.T) {
 	t.Run("Zone-"+l+" messages - "+strconv.Itoa(numMessages), func(t *testing.T) {
 		var sentOrder = make(chan string, numMessages)
 		var wg sync.WaitGroup
-		defer nw.allProcesses[l].removeFiles()
+		//	defer nw.allProcesses[l].removeFiles()
 
 		<-time.After(1 * time.Second)
 		for i := 0; i < numMessages; i += 2 {
 			wg.Add(2)
-			<-time.After(2 * time.Second) // new round
+			<-time.After(syncDelay) // new round maybe
 			go func(i int) {
 				defer wg.Done()
 				go func(i int) {
@@ -58,7 +59,7 @@ func Test_Gossip_Load_Multiple_Rounds(t *testing.T) {
 	})
 }
 func Test_Gossip_Load_Single_Round(t *testing.T) {
-	l := envFile + "2.leader.env"
+	l := envFile + "1.leader.env"
 	ctx, can := context.WithCancel(context.Background())
 	defer can()
 
@@ -69,7 +70,7 @@ func Test_Gossip_Load_Single_Round(t *testing.T) {
 	t.Run("Zone-"+l+" messages - "+strconv.Itoa(numMessages), func(t *testing.T) {
 		var sentOrder = make(chan string, numMessages)
 		var wg sync.WaitGroup
-		defer nw.allProcesses[l].removeFiles()
+		//defer nw.allProcesses[l].removeFiles()
 
 		<-time.After(1 * time.Second)
 		for i := 0; i < numMessages; i += 2 {
@@ -98,6 +99,7 @@ func Test_Gossip_Load_Single_Round(t *testing.T) {
 			so = append(so, s)
 		}
 		nw.allProcesses[l].matchSnapshot(t, so)
+		fmt.Println("Sent order length - ", len(so))
 	})
 
 }

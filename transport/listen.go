@@ -4,6 +4,7 @@ import (
 	"context"
 	"net"
 	"os"
+	"time"
 
 	"github.com/Ishan27g/go-utils/mLogger"
 	"github.com/hashicorp/go-hclog"
@@ -12,6 +13,8 @@ import (
 
 	"github.com/Ishan27g/syncEngine/proto"
 )
+
+const ConnectionTimeout = 10 * time.Second
 
 type RpcOption func(*RpcServer)
 
@@ -63,6 +66,7 @@ func NewRpcServer(opts ...RpcOption) *RpcServer {
 func (r *RpcServer) Start(ctx context.Context, listener net.Listener) {
 	go func() {
 		grpcServer := grpc.NewServer(
+			grpc.ConnectionTimeout(ConnectionTimeout),
 			grpc.UnaryInterceptor(otelgrpc.UnaryServerInterceptor()),
 			grpc.StreamInterceptor(otelgrpc.StreamServerInterceptor()),
 		)

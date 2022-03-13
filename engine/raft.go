@@ -143,11 +143,11 @@ func possiblePeers(zone int) []string {
 func (r *raft) election(raftPeers []string, term *proto.Term) bool {
 
 	//r.Warn("Requesting votes from peers  for term-" + strconv.Itoa(int(term.TermCount)))
-	ctx, cancel := context.WithTimeout(context.Background(), 6*time.Second)
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 	votes := 0
 	for _, peer := range raftPeers {
-		p := transport.NewVotingClient(peer)
+		p := transport.NewVotingClient(ctx, peer)
 		if p == nil {
 			continue
 		}
@@ -155,7 +155,6 @@ func (r *raft) election(raftPeers []string, term *proto.Term) bool {
 		if voted.Elected && err == nil {
 			votes++
 		}
-		p.Disconnect()
 	}
 	//r.Warn("VOTED? " + fmt.Sprintf("%v,%v", votes, raftPeers))
 

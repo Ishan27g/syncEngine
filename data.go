@@ -19,6 +19,8 @@ import (
 	"github.com/Ishan27g/syncEngine/utils"
 )
 
+var syncDelay = 3000 * time.Millisecond
+
 type dataManager struct {
 	vm data.VersionAbleI
 
@@ -177,7 +179,6 @@ func getPacket(dm *dataManager) func(id string) *gossip.Packet {
 }
 
 func (dm *dataManager) startRoundSync(ctx context.Context, gm *gossipManager, hClient *transport.HttpClient) {
-	var syncDelay = 3000 * time.Millisecond
 
 	go func() {
 		for {
@@ -219,19 +220,18 @@ func (dm *dataManager) startRoundSync(ctx context.Context, gm *gossipManager, hC
 					continue
 				}
 
-				dm.saveSnapshot()
-
 				//sync if new round
-				//if dm.round < RoundResolution {
-				//	dm.round++
-				//	dm.Trace("syncLeader: Data sync complete...in the same round ... 3/4 & 4/4")
-				//	continue
-				//}
-				//dm.round = 0
+				if dm.round < RoundResolution {
+					dm.round++
+					dm.Trace("syncLeader: Data sync complete...in the same round ... 3/4 & 4/4")
+					continue
+				}
+				dm.round = 0
 
 				dm.sm.RoundNum++
 
 				dm.sendRoundNum(hClient)
+				dm.saveSnapshot()
 
 				dm.sm.Round()
 				dm.Events.Reset()
@@ -301,43 +301,8 @@ func (dm *dataManager) waitOnGossip(ctx context.Context, gm *gossipManager, hCli
 				dm.Error("context done")
 				return
 			case gp := <-gm.rcv:
-				dm.Info("Received gossip packet from network", "id", gp.GetId())
-				goto eventAtLeader
-			eventAtLeader:
-				{
-					var leader string
-					if !dm.isZoneLeader() {
-						// send event to zoneLeader
-						leader = dm.state().RaftLeader.GrpcAddr()
-					} else {
-						// send to syncLeader
-						leader = dm.state().SyncLeader.GrpcAddr()
-					}
-					if dm.isSyncLeader() {
-						events := utils.OrderToEvents(utils.PacketToOrder(gp))
-						for _, event := range events {
-							if dm.vm.GetVersion(event.EventId) == -1 {
-								dm.Events.MergeEvent(event.EventId, event.EventClock)
-							}
-							dm.vm.UpdateVersion(event.EventId)
-						}
-						dm.Data.SaveUnorderedPacket(gp)
-						continue
-					}
-					ctx1, cancel := context.WithDeadline(context.Background(), time.Now().Add(6*time.Second))
-					c := transport.NewDataSyncClient(ctx1, leader)
-					dm.Info("New Event: Sending to", "leader", leader)
-					_, err := c.NewEvent(ctx1, utils.PacketToOrder(gp))
-					if err != nil {
-						dm.Warn("New Event: Error from", "leader", leader)
-						// - backoff for some time, new leader should be elected
-						<-time.After(engine.Monitor_Timeout)
-						goto eventAtLeader
-					}
-					cancel()
-					dm.Data.SaveUnorderedPacket(gp)
-					dm.Info("Saved unordered packet ", "id", gp.GetId())
-				}
+				dm.Info("Received gossip packet from network", "id", gp.GetId(), "data", gp.GetData())
+				go dm.eventAtLeader(gp)
 			}
 		}
 	}()
@@ -431,7 +396,7 @@ download:
 		gp := hClient.DownloadPacket(peersHttp.Peers[r].PeerId, mp)
 		if gp != nil {
 			dm.Data.SaveOrderedPacket(*gp)
-			dm.Info("Saved missing packet ", "id", mp)
+			dm.Info("Saved missing packet ", "id", mp, "data", gp.GetData())
 			dm.downloadingPacket--
 			return
 		} else {
@@ -439,4 +404,40 @@ download:
 			goto download
 		}
 	}
+}
+
+func (dm *dataManager) eventAtLeader(gp gossip.Packet) {
+	var leader string
+	if !dm.isZoneLeader() {
+		// send event to zoneLeader
+		leader = dm.state().RaftLeader.GrpcAddr()
+	} else {
+		// send to syncLeader
+		leader = dm.state().SyncLeader.GrpcAddr()
+	}
+	if dm.isSyncLeader() {
+		events := utils.OrderToEvents(utils.PacketToOrder(gp))
+		for _, event := range events {
+			if dm.vm.GetVersion(event.EventId) == -1 {
+				dm.Events.MergeEvent(event.EventId, event.EventClock)
+			}
+			dm.vm.UpdateVersion(event.EventId)
+		}
+		dm.Data.SaveUnorderedPacket(gp)
+		dm.Info("SL:Saved unordered packet ", "id", gp.GetId(), "data", gp.GetData())
+		return
+	}
+	ctx1, cancel := context.WithDeadline(context.Background(), time.Now().Add(6*time.Second))
+	c := transport.NewDataSyncClient(ctx1, leader)
+	dm.Info("New Event: Sending to", "leader", leader)
+	_, err := c.NewEvent(ctx1, utils.PacketToOrder(gp))
+	if err != nil {
+		dm.Warn("New Event: Error from", "leader", leader)
+		// - backoff for some time, new leader should be elected
+		<-time.After(engine.Monitor_Timeout)
+		dm.eventAtLeader(gp)
+	}
+	cancel()
+	dm.Data.SaveUnorderedPacket(gp)
+	dm.Info("Saved unordered packet ", "id", gp.GetId(), "data", gp.GetData())
 }

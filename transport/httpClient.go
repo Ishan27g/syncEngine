@@ -137,7 +137,7 @@ func (hc *HttpClient) SendHttp(req *http.Request, spanName string, data traceDat
 	}
 	ctx = baggage.ContextWithBaggage(ctx, bag)
 
-	client := http.Client{Transport: otelhttp.NewTransport(http.DefaultTransport), Timeout: time.Second * 10}
+	client := http.Client{Transport: otelhttp.NewTransport(http.DefaultTransport), Timeout: ConnectionTimeout}
 
 	outReq, _ := http.NewRequestWithContext(ctx, req.Method, req.URL.String(), req.Body)
 	for key, value := range req.Header {
@@ -267,10 +267,10 @@ func (hc *HttpClient) DownloadPacket(from, id string) *gossip.Packet {
 	if rsp := hc.SendHttp(req, "Download-packet", traceData("Download packet : "+url)); rsp != nil {
 		err := json.Unmarshal(rsp, &packet)
 		if err != nil {
-			logger.Trace("Could not retrieved packet " + id)
+			logger.Warn("Could not retrieved packet " + id)
 			return nil
 		}
-		logger.Trace("Retrieved packet " + packet.GetId())
+		// logger.Trace("Retrieved packet " + packet.GetId())
 		return &packet
 	}
 	return nil

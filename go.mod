@@ -4,7 +4,7 @@ go 1.17
 
 require (
 	github.com/Ishan27g/go-utils/mLogger v0.0.0-20220308132511-ad5f5c0e8f14
-	github.com/Ishan27g/gossipProtocol v0.0.0-20220312144139-be2ebbef55f2
+	github.com/Ishan27g/gossipProtocol v0.0.0-20220312164607-f13070548579
 	github.com/Ishan27g/registry/golang/registry v0.0.0-20220312143626-5ce43317837b
 	github.com/Ishan27g/vClock v0.0.0-20220221133617-fae27884de39
 	github.com/bxcodec/faker/v3 v3.8.0

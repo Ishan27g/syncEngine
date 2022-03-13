@@ -240,8 +240,10 @@ func NewHttpSrv(port string, tracerId string, cbs ...HTTPCbs) *HttpSrv {
 	}
 	h.Logger = mLogger.Get("http" + port)
 	httpSrv := &http.Server{
-		Addr:    port,
-		Handler: nil,
+		Addr:         port,
+		Handler:      nil,
+		ReadTimeout:  ConnectionTimeout,
+		WriteTimeout: ConnectionTimeout,
 	}
 	gin.SetMode(gin.ReleaseMode)
 	g := gin.New()
