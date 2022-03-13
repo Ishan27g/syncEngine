@@ -55,7 +55,6 @@ func (v *View) checkExists(udpaddress string) (bool, int, int) {
 	index := 0
 	for it := v.Nodes.Iterator(); it.Next(); {
 		n1 := it.Value().(Peer)
-		println(n1.UdpAddress, udpaddress, n1.UdpAddress == udpaddress)
 		if n1.UdpAddress == udpaddress {
 			return true, n1.Hop, index
 		}
@@ -244,7 +243,7 @@ type data struct {
 func ViewToBytes(view View, from Peer) []byte {
 	m := make(map[string]*Peer)
 	if view.Nodes.Size() == 0 {
-		m["empty"] = &Peer{}
+		m["emptyView"] = &Peer{}
 	}
 	for it := view.Nodes.Iterator(); it.Next(); {
 		node := it.Value().(Peer)
@@ -264,8 +263,7 @@ func ViewToBytes(view View, from Peer) []byte {
 }
 func BytesToView(bytes []byte) (View, Peer, error) {
 	if bytes == nil {
-		fmt.Println("empty")
-		return View{}, Peer{}, errors.New("empty")
+		return View{}, Peer{}, errors.New("emptyView")
 	}
 	var data = data{}
 	if err := json.Unmarshal(bytes, &data); err != nil {
@@ -273,7 +271,7 @@ func BytesToView(bytes []byte) (View, Peer, error) {
 		return View{}, Peer{}, err
 	}
 	v := View{Nodes: sll.New()}
-	if data.View["empty"] != nil {
+	if data.View["emptyView"] != nil {
 		return v, Peer{
 			UdpAddress:        data.PeerUdp,
 			ProcessIdentifier: data.PeerId,
