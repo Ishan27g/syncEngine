@@ -26,8 +26,8 @@ services:
     deploy:
       resources:
         limits:
-          cpus: '0.05'
-          memory: 250M
+          cpus: '0.1'
+          memory: 800M
 #  registry:
 #    image: sync-registry
 #    ports:

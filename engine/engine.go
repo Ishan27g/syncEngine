@@ -5,6 +5,7 @@ import (
 
 	"github.com/Ishan27g/go-utils/mLogger"
 	gossip "github.com/Ishan27g/gossipProtocol"
+	"github.com/Ishan27g/syncEngine/data"
 	"github.com/hashicorp/go-hclog"
 
 	"github.com/Ishan27g/syncEngine/peer"
@@ -20,8 +21,8 @@ type Engine struct {
 	self     peer.Peer
 	DataFile string
 
-	zonePeers          map[string]*peer.State
-	syncPeers          map[string]*peer.State
+	zonePeers          data.SyncMap // todo sync.Map
+	syncPeers          data.SyncMap // todo sync.Map
 	zoneRaft           Raft
 	hbFromRaftLeader   chan peer.Peer
 	votedForRaftLeader chan peer.Peer
@@ -67,41 +68,41 @@ func (e *Engine) Start() {
 	}()
 }
 func (e *Engine) AddSyncFollower(p peer.State) {
-	if e.syncPeers[p.Self.HttpAddr()] == nil {
-		e.syncPeers[p.Self.HttpAddr()] = &peer.State{
+	if e.syncPeers.Get(p.Self.HttpAddr()) == nil {
+		e.syncPeers.Add(p.Self.HttpAddr(), &peer.State{
 			Self:       p.Self,
 			RaftLeader: p.RaftLeader,
 			SyncLeader: p.SyncLeader,
-		}
+		})
 	}
 }
 
 func (e *Engine) AddFollower(p peer.State) {
-	if e.zonePeers[p.Self.HttpAddr()] == nil {
-		e.zonePeers[p.Self.HttpAddr()] = &peer.State{
+	if e.zonePeers.Get(p.Self.HttpAddr()) == nil {
+		e.zonePeers.Add(p.Self.HttpAddr(), &peer.State{
 			Self:       p.Self,
 			RaftLeader: p.RaftLeader,
 			SyncLeader: p.SyncLeader,
-		}
+		})
 	}
 }
 func (e *Engine) GetFollowers(asPeer bool) interface{} {
 	if asPeer {
 		var f []peer.Peer
-		for _, v := range e.zonePeers {
+		for _, v := range e.zonePeers.All() {
 			f = append(f, v.Self)
 		}
 		return f
 	}
 	var f []peer.State
-	for _, v := range e.zonePeers {
+	for _, v := range e.zonePeers.All() {
 		f = append(f, *v)
 	}
 	return f
 }
 func (e *Engine) GetSyncFollowers() []peer.Peer {
 	var f []peer.Peer
-	for _, v := range e.syncPeers {
+	for _, v := range e.syncPeers.All() {
 		f = append(f, v.Self)
 	}
 	return f
@@ -115,8 +116,8 @@ func Init(self peer.Peer, hClient *transport.HttpClient) *Engine {
 		Logger:             mLogger.Get(self.HttpPort),
 		zoneRaft:           nil,
 		syncRaft:           nil,
-		zonePeers:          make(map[string]*peer.State),
-		syncPeers:          make(map[string]*peer.State),
+		zonePeers:          data.NewMap(),
+		syncPeers:          data.NewMap(),
 		HClient:            hClient,
 		votedForRaftLeader: make(chan peer.Peer),
 		votedForSyncLeader: make(chan peer.Peer),
@@ -175,14 +176,14 @@ func Init(self peer.Peer, hClient *transport.HttpClient) *Engine {
 
 func (e *Engine) resetFollowers(zone bool, runningFollowers []*peer.State) {
 	if zone {
-		e.zonePeers = make(map[string]*peer.State)
+		e.zonePeers = data.NewMap()
 		for _, follower := range runningFollowers {
 			if follower != nil {
 				e.AddFollower(*follower)
 			}
 		}
 	} else {
-		e.syncPeers = make(map[string]*peer.State)
+		e.syncPeers = data.NewMap()
 		for _, follower := range runningFollowers {
 			if follower != nil {
 				e.AddSyncFollower(*follower)
@@ -236,7 +237,7 @@ func (e *Engine) syncHbs() func() {
 		// start syncRaft hbs if syncLeader, or elected as syncLeader
 		//leaders := transport.DiscoverRaftLeaders(self.Zone) // todo?
 		var httpAddr []string
-		for _, peer := range e.syncPeers {
+		for _, peer := range e.syncPeers.All() {
 			httpAddr = append(httpAddr, peer.Self.HttpAddr())
 		}
 		runningSyncFollowers := e.HClient.SendSyncLeaderHb(e.Self(), httpAddr...)

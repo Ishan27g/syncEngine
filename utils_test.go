@@ -158,6 +158,7 @@ func setupNetwork(ctx context.Context, leaders ...string) network {
 			var dm *dataManager
 			var gm *gossipManager
 			wg.Add(1)
+			time.After(randomInt())
 			go func(follower string, dm *dataManager, gm *gossipManager) {
 				defer wg.Done()
 				dm, gm, _ = Start(ctx, follower)

@@ -66,7 +66,8 @@ func Start(ctx context.Context, envFile string) (*dataManager, *gossipManager, *
 	tracerId := self.HostName + self.HttpPort
 	//	tracerId := self.HttpAddr()
 
-	jp := provider.Init("zipkin", tracerId, self.FakeName)
+	// jp := provider.Init("zipkin", tracerId, self.FakeName)
+	jp := provider.Init("jaeger", tracerId, self.FakeName)
 	go func(ctx context.Context, jp provider.TraceProvider) {
 		<-ctx.Done()
 		jp.Close()
