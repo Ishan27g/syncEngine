@@ -21,9 +21,12 @@ import (
 	"github.com/Ishan27g/syncEngine/snapshot"
 	"github.com/Ishan27g/syncEngine/transport"
 	"github.com/Ishan27g/syncEngine/utils"
+
+	cmap "github.com/orcaman/concurrent-map"
 )
 
 // var envFile = ".envFiles/1.leader.env"
+var cm = cmap.New()
 
 func getData(eng *engine.Engine, dm *dataManager) func() transport.SyncRsp {
 	return func() transport.SyncRsp {
