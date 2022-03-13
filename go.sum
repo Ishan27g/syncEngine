@@ -4,10 +4,12 @@ cloud.google.com/go v0.34.0/go.mod h1:aQUYkXzVsufM+DwF1aE+0xfcU+56JwCaLick0ClmMT
 github.com/BurntSushi/toml v0.3.1/go.mod h1:xHWCNGjB5oqiDr8zfno3MHue2Ht5sIBksp03qcyfWMU=
 github.com/Ishan27g/go-utils/mLogger v0.0.0-20220308132511-ad5f5c0e8f14 h1:vEQvYHt1uTMbuqCHefMAaUgr/mdzmZx9jWl78YtXZVo=
 github.com/Ishan27g/go-utils/mLogger v0.0.0-20220308132511-ad5f5c0e8f14/go.mod h1:WzVBX9gkyoU43yCXo9y3vwCRvahASWxlL8oV7vDTpT0=
+github.com/Ishan27g/gossipProtocol v0.0.0-20220313142004-59e0dd2ba52f h1:NAs/+lmvGzeDmAFPHVk62U1dLz+4c4n/+7IHYrUa69w=
+github.com/Ishan27g/gossipProtocol v0.0.0-20220313142004-59e0dd2ba52f/go.mod h1:SO/+LhmhIynmrHL1z+agMUBF5woAeXqs3fczmkT3gHQ=
 github.com/Ishan27g/registry/golang/registry v0.0.0-20220312143626-5ce43317837b h1:k8G4hQk7UNazWVhG+92WUxKCjqWzEYwtB0N9mpcqTRA=
 github.com/Ishan27g/registry/golang/registry v0.0.0-20220312143626-5ce43317837b/go.mod h1:jSPu2fquliN3KUTGs+CkK5OWXVrldBOAcFLyYfKY4SI=
-github.com/Ishan27g/vClock v0.0.0-20220221133617-fae27884de39 h1:IU17B2txeT0vAOvrr0D5bzj4eGOUsjqIqJsUG3IwBxI=
-github.com/Ishan27g/vClock v0.0.0-20220221133617-fae27884de39/go.mod h1:ei9rlINbpzjP97nfl2gmmhDPVtn/Lk42VnmqclOpIZg=
+github.com/Ishan27g/vClock v0.0.0-20220313143106-98dea0f2d782 h1:3T1daFUoDzfL4ls0Mv24iN5Ks6mTmZrRY68s/1owtM4=
+github.com/Ishan27g/vClock v0.0.0-20220313143106-98dea0f2d782/go.mod h1:ei9rlINbpzjP97nfl2gmmhDPVtn/Lk42VnmqclOpIZg=
 github.com/Shopify/sarama v1.30.0/go.mod h1:zujlQQx1kzHsh4jfV1USnptCQrHAEZ2Hk8fTKCulPVs=
 github.com/Shopify/toxiproxy/v2 v2.1.6-0.20210914104332-15ea381dcdae/go.mod h1:/cvHQkZ1fst0EmZnA5dFtiQdWCNCFYzb+uE2vqVgvx0=
 github.com/antihax/optional v1.0.0/go.mod h1:uupD/76wgC+ih3iEmQUL+0Ugr19nfwCT1kdvxnR2qWY=

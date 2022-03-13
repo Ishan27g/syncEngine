@@ -19,7 +19,7 @@ func Test_Round_AtRandom(t *testing.T) {
 }
 func Test_Multiple_Rounds(t *testing.T) {
 
-	var numMessages = 32
+	var numMessages = 16
 	var delay = delay(func() time.Duration {
 		return time.Second * 2
 	})
