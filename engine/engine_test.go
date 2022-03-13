@@ -21,9 +21,8 @@ func mockRegistry() {
 }
 func TestInit(t *testing.T) {
 	mockRegistry()
-	t.Cleanup(func() {
-		registry.ShutDown()
-	})
+	defer registry.ShutDown()
+
 	<-time.After(2 * time.Second)
 	var self peer.Peer
 	self, transport.RegistryUrl = peer.FromEnv(envFile)

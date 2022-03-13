@@ -210,7 +210,6 @@ func runTest(t *testing.T, ctx context.Context, l string, numMessages int, at in
 	}
 
 	nw := setupNetwork(ctx, l)
-	defer registry.ShutDown()
 
 	nw.sendGossip(numMessages, l, atAny, d())
 
