@@ -84,13 +84,15 @@ func (z *Zone) removeFiles() {
 		_ = os.Remove(engine.DataFile(follower.self()))
 	}
 }
+
+// compare snapshots for each process
 func (z *Zone) matchSnapshot(t *testing.T, numMessages int) {
 
 	var dataFiles []string
 	var fileData []string
 
 	l := engine.DataFile(z.leader.self())
-	_, err := ioutil.ReadFile(l)
+	leaderFile, err := ioutil.ReadFile(l)
 	assert.NoError(t, err)
 	for _, follower := range z.followers {
 		dataFiles = append(dataFiles, engine.DataFile(follower.self()))
@@ -100,9 +102,9 @@ func (z *Zone) matchSnapshot(t *testing.T, numMessages int) {
 		//for i, entry := range snapshot.FromFile(f1).Get() {
 		//assert.Equal(t, with[i], entry.Data)
 		//}
-		//f, err := ioutil.ReadFile(f1)
-		//assert.NoError(t, err)
-		// assert.Equal(t, leaderFile, f)
+		f, err := ioutil.ReadFile(f1)
+		assert.NoError(t, err)
+		assert.Equal(t, leaderFile, f)
 	}
 	fmt.Println("DataFiles", dataFiles)
 	for _, file := range dataFiles {

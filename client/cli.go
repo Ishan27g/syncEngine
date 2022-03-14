@@ -15,10 +15,10 @@ var Peers = map[string]string{
 	"Leader-1": "3101",
 	"Peer-A_1": "3102",
 	"Peer-B_1": "3103",
-	"Leader-2": "3106",
+	"Leader-2": "3201",
 	//"Peer-A_2": "3202",
 	//"Peer-B_2": "3203",
-	"Leader_3": "3301",
+	"Leader-3": "3301",
 	//"Peer-A_3": "3302",
 	//"Peer-B_3": "3303",
 }

@@ -11,7 +11,7 @@ import (
 	registry "github.com/Ishan27g/registry/golang/registry/package"
 )
 
-const bulkMessages = 10
+const bulkMessages = 100
 
 func Test_Gossip_Load_Single_Round(t *testing.T) {
 	ctx, can := context.WithCancel(context.Background())

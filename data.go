@@ -55,7 +55,7 @@ func (dm *dataManager) isSyncLeader() bool {
 
 func (dm *dataManager) saveSnapshot() {
 	if !dm.canSnapshot() {
-		<-time.After(1 * time.Second)
+		<-time.After(250 * time.Millisecond)
 		dm.saveSnapshot()
 	}
 	entries := utils.OrderToEntries(dm.Data.GetOrderedPackets()...)
@@ -187,6 +187,7 @@ func (dm *dataManager) startRoundSync(ctx context.Context, gm *gossipManager, hC
 			case <-ctx.Done():
 				return
 			case <-time.After(syncDelay):
+
 				if !dm.isZoneLeader() {
 					//dm.Info("follower: ...", "roundNum", dm.sm.RoundNum)
 					//dm.Data.ApplyOrder(dm.Events.GetOrderedIds())

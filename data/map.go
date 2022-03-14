@@ -31,5 +31,22 @@ func (sm *SyncMap) All() map[string]*peer.State {
 		m[key.(string)] = value.(*peer.State)
 		return true
 	})
+	//	stack()
 	return m
 }
+
+// func stack() {
+// 	pc, _, _, ok := runtime.Caller(2)
+// 	details := runtime.FuncForPC(pc)
+// 	var funcName string
+// 	if ok && details != nil {
+// 		funcName = details.Name()[5:]
+// 		fmt.Printf("called from %s\n", funcName)
+// 	}
+// 	pc, _, _, ok = runtime.Caller(3)
+// 	details = runtime.FuncForPC(pc)
+// 	if ok && details != nil {
+// 		funcName = details.Name()[5:]
+// 		fmt.Printf("which was called from %s\n", funcName)
+// 	}
+// }

@@ -80,7 +80,7 @@ func InitRaft(mode int, votedForLeader chan peer.Peer, hbFromLeader chan peer.Pe
 		hbFromLeader:      hbFromLeader,
 		votedForLeader:    votedForLeader,
 		sendHbToFollowers: actionWhenLeader,
-		Logger:            mLogger.Get("Raft" + self.HttpAddr()),
+		Logger:            mLogger.Get("Raft" + self.HttpPort),
 	}
 	if leader != nil {
 		var l peer.Peer

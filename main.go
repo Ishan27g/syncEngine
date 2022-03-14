@@ -136,6 +136,7 @@ init:
 					ProcessIdentifier: p.HttpAddr(),
 					Hop:               0,
 				})
+				dm.Info("Added follower", "raft", p.HttpAddr())
 			}),
 			transport.WithSyncFollowerCb(func(p peer.Peer) {
 				eng.AddSyncFollower(peer.State{
@@ -148,6 +149,7 @@ init:
 					ProcessIdentifier: p.HttpAddr(),
 					Hop:               0,
 				})
+				dm.Info("Added follower", "sync", p.HttpAddr())
 			}),
 			transport.WithSyncInitialOrderCb(getData(eng, &dm)),
 			transport.WithSnapshotFile(eng.DataFile),
@@ -225,14 +227,17 @@ init:
 	//	}
 	if p != nil {
 		for _, peer := range p.Peers {
-			gossipPeers = append(gossipPeers, gossip.Peer{
-				UdpAddress:        peer.UdpAddress,
-				ProcessIdentifier: peer.PeerId,
-				Hop:               0,
-			})
+			if peer.UdpAddress != dm.state().Self.UdpAddr() {
+				gossipPeers = append(gossipPeers, gossip.Peer{
+					UdpAddress:        peer.UdpAddress,
+					ProcessIdentifier: peer.PeerId,
+					Hop:               0,
+				})
+			}
 		}
 	}
 	gm.gsp.Join(gossipPeers...)
+	dm.Warn("Gossip-Network", "peers", fmt.Sprintf("%v", gossipPeers))
 	if len(entries) > 0 {
 		dm.sm.Sync(entries...)
 		dm.sm.Round()
