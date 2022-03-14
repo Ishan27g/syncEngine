@@ -347,12 +347,20 @@ func (dm *dataManager) download(mp string, hClient *transport.HttpClient) {
 	goto lookup
 lookup:
 	{
+		if dm.Data.GetPacket(mp) != nil {
+			dm.Info("Already retrieved packet ", "id", mp)
+			dm.downloadingPacket--
+			return
+		}
 		peers = []string{}
 		if !dm.isZoneLeader() {
 			// ask raftLeader for missing packet addresses
 			peers = append(peers, dm.state().RaftLeader.GrpcAddr())
 		} else if dm.isSyncLeader() {
 			for _, p := range dm.zonePeers() {
+				peers = append(peers, p.GrpcAddr())
+			}
+			for _, p := range dm.syncPeers() {
 				peers = append(peers, p.GrpcAddr())
 			}
 		} else {
@@ -367,7 +375,7 @@ lookup:
 	var err error
 	for _, p := range peers {
 		c := transport.NewDataSyncClient(ctx1, p)
-		dm.Info("Asking for packet", "peer", p)
+		dm.Info("Asking for packet", "id", mp, "peer", p)
 		peersHttp, err = c.GetPacketAddresses(ctx1, &proto.Ok{Id: mp})
 		if err != nil {
 			dm.Error(err.Error())
@@ -402,7 +410,7 @@ download:
 			return
 		} else {
 			dm.Error("Cannot retrieve missing packet ", "id", mp, "peer", peersHttp.Peers[r].PeerId)
-			goto download
+			goto lookup
 		}
 	}
 }

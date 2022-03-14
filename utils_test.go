@@ -7,7 +7,6 @@ import (
 	"math/rand"
 	"os"
 	"sort"
-	"strconv"
 	"sync"
 	"testing"
 	"time"
@@ -41,12 +40,12 @@ var envFiles = envMap{
 		envFile + "1.follower.E.env",
 	},
 	envFile + "2.leader.env": []string{
-		envFile + "2.follower.A.env",
+		// envFile + "2.follower.A.env",
 		// envFile + "2.follower.B.env",
 	},
 	envFile + "3.leader.env": []string{
-		envFile + "3.follower.A.env",
-		envFile + "3.follower.B.env",
+		//envFile + "3.follower.A.env",
+		//envFile + "3.follower.B.env",
 	},
 }
 
@@ -167,6 +166,7 @@ func setupNetwork(ctx context.Context, leaders ...string) network {
 			}(follower, dm, gm)
 		}
 		wg.Wait()
+		<-time.After(engine.Hb_Timeout)
 	}
 	close(p)
 	for pr := range p {
@@ -186,7 +186,7 @@ func discardGossipReceived(gm *gossipManager) {
 
 func (nw *network) sendGossip(numMessages int, l string, at int, delay time.Duration) {
 	for i := 0; i < numMessages; i++ {
-		data := "data " + strconv.Itoa(i)
+		data := "data - " + time.Now().String()
 		switch at {
 		case atLeaderOnly:
 			nw.allProcesses[l].sendData(true, data)
@@ -211,10 +211,27 @@ func runTest(t *testing.T, ctx context.Context, l string, numMessages int, at in
 
 	nw := setupNetwork(ctx, l)
 
-	nw.sendGossip(numMessages, l, atAny, d())
+	nw.sendGossip(numMessages, l, at, d()) // todo at
 
 	<-time.After(10 * time.Second)
 	nw.allProcesses[l].matchSnapshot(t, numMessages)
+
+	<-time.After(2 * time.Second)
+}
+func runTestZones(t *testing.T, ctx context.Context, numMsgAtEachZone int, at int, d delay, leaders ...string) {
+	if at == atAny && numMsgAtEachZone%2 != 0 {
+		fmt.Println("even number of messages")
+		os.Exit(1)
+	}
+
+	nw := setupNetwork(ctx, leaders...)
+	for _, leader := range leaders {
+		nw.sendGossip(numMsgAtEachZone, leader, at, d())
+	}
+	<-time.After(10 * time.Second)
+	for _, leader := range leaders {
+		nw.allProcesses[leader].matchSnapshot(t, numMsgAtEachZone*len(leaders))
+	}
 
 	<-time.After(2 * time.Second)
 }

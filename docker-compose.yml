@@ -34,6 +34,25 @@ services:
 #      - "9999:9999"
 #    networks:
 #      sync_nw:
+#  ubuntu-shell:
+#    image: ubuntu-shell
+#    container_name: ubuntu-shell
+#    hostname: ubuntu-shell
+#    # build:
+#    #   context: .
+#    #   dockerfile: ubuntu.Dockerfile
+#    ports:
+#      - "9000:9000"
+#    volumes:
+#      - .:/syncEngine
+#    stdin_open: true
+#    tty: true
+#    command: "zsh"
+#    #sh -c "$(curl -fsSL https://raw.github.com/ohmyzsh/ohmyzsh/master/tools/install.sh)"
+
+volumes:
+  ubuntu-shell-volume:
+    external: true
 
 networks:
   sync_nw:

@@ -152,6 +152,9 @@ func (r *raft) election(raftPeers []string, term *proto.Term) bool {
 			continue
 		}
 		voted, err := p.RequestVotes(ctx, term)
+		if voted == nil {
+			continue
+		}
 		if voted.Elected && err == nil {
 			votes++
 		}

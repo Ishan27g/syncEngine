@@ -10,6 +10,12 @@ import (
 
 var singleRoundNumMessages = 16
 var zone1 = envFile + "1.leader.env"
+var zone2 = envFile + "2.leader.env"
+var zone3 = envFile + "3.leader.env"
+
+var twoSeconds = delay(func() time.Duration {
+	return time.Second * 2
+})
 
 func Test_Round_AtLeader(t *testing.T) {
 	ctx, can := context.WithCancel(context.Background())
@@ -17,7 +23,7 @@ func Test_Round_AtLeader(t *testing.T) {
 		can()
 		<-ctx.Done()
 		registry.ShutDown()
-		<-time.After(1 * time.Second)
+		<-time.After(2 * time.Second)
 	}()
 
 	runTest(t, ctx, zone1, singleRoundNumMessages, atLeaderOnly, randomInt)
@@ -28,7 +34,7 @@ func Test_Round_AtFollowers(t *testing.T) {
 		can()
 		<-ctx.Done()
 		registry.ShutDown()
-		<-time.After(1 * time.Second)
+		<-time.After(2 * time.Second)
 	}()
 
 	runTest(t, ctx, zone1, singleRoundNumMessages, atFollowerOnly, randomInt)
@@ -39,25 +45,34 @@ func Test_Round_AtRandom(t *testing.T) {
 		can()
 		<-ctx.Done()
 		registry.ShutDown()
-		<-time.After(1 * time.Second)
+		<-time.After(2 * time.Second)
 	}()
 
 	runTest(t, ctx, zone1, singleRoundNumMessages, atAny, randomInt)
 }
 func Test_Multiple_Rounds(t *testing.T) {
 	var numMessages = 16
-	var delay = delay(func() time.Duration {
-		return time.Second * 2
-	})
+
 	ctx, can := context.WithCancel(context.Background())
 	defer func() {
 		can()
 		<-ctx.Done()
 		registry.ShutDown()
-		<-time.After(1 * time.Second)
+		<-time.After(2 * time.Second)
 	}()
 
-	runTest(t, ctx, zone1, numMessages, atAny, delay)
+	runTest(t, ctx, zone1, numMessages, atAny, twoSeconds)
+}
+func Test_Multiple_Zones(t *testing.T) {
+	ctx, can := context.WithCancel(context.Background())
+	defer func() {
+		can()
+		<-ctx.Done()
+		registry.ShutDown()
+		<-time.After(2 * time.Second)
+	}()
+
+	runTestZones(t, ctx, 2, atLeaderOnly, twoSeconds, []string{zone2, zone3}...)
 }
 
 // go test --v ./... -run Test_Round_AtLeader

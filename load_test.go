@@ -19,7 +19,7 @@ func Test_Gossip_Load_Single_Round(t *testing.T) {
 		can()
 		<-ctx.Done()
 		registry.ShutDown()
-		<-time.After(1 * time.Second)
+		<-time.After(2 * time.Second)
 	}()
 
 	runTest(t, ctx, zone1, bulkMessages, atAny, func() time.Duration {
@@ -32,7 +32,7 @@ func Test_Gossip_Load_Multiple_Rounds(t *testing.T) {
 		can()
 		<-ctx.Done()
 		registry.ShutDown()
-		<-time.After(1 * time.Second)
+		<-time.After(2 * time.Second)
 	}()
 
 	runTest(t, ctx, zone1, bulkMessages, atAny, func() time.Duration {

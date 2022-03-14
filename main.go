@@ -189,7 +189,7 @@ init:
 		httpServer.Start(ctxInit, nil)
 		eng.Start()
 
-		<-time.After(engine.Hb_Timeout)
+		<-time.After(engine.Monitor_Timeout)
 
 		dm.Info("started...", "isZoneLeader", dm.isZoneLeader(), "isSyncLeader", dm.isSyncLeader())
 	}
@@ -215,7 +215,6 @@ init:
 			cancelInit()
 			goto init
 		}
-		dm.Warn("FUCk", "dm.state().SyncLeader.HttpAddr()", dm.state().SyncLeader.HttpAddr())
 		hClient.SendSyncRequest(dm.state().SyncLeader.HttpAddr(), &initialEventOrder, &entries, dm.state().Self)
 		c := transport.NewDataSyncClient(ctx1, dm.state().SyncLeader.GrpcAddr())
 		p, _ = c.GetNetworkView(ctx1, &proto.Ok{})
