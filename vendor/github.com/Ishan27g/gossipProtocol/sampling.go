@@ -3,7 +3,6 @@ package gossipProtocol
 import (
 	"context"
 	"math/rand"
-	"sync"
 	"time"
 
 	sll "github.com/emirpasic/gods/lists/singlylinkedlist"
@@ -26,7 +25,7 @@ type sampling struct {
 	strategy       PeerSamplingStrategy
 	view           View
 	selfDescriptor Peer
-	knownPeers     sync.Map
+	knownPeers     map[string]Peer
 	udpClient      client
 
 	previousPeer Peer
@@ -58,21 +57,15 @@ func (s *sampling) fillView(peers ...Peer) {
 }
 
 func (s *sampling) addPeerToView(peer Peer) {
-	_, exists := s.knownPeers.Load(peer.ProcessIdentifier)
-	if !exists {
+	if s.knownPeers[peer.ProcessIdentifier].ProcessIdentifier == "" {
 		s.view.add(peer)
-		s.knownPeers.Store(peer.ProcessIdentifier, peer)
+		s.knownPeers[peer.ProcessIdentifier] = peer
 	}
-	//if s.knownPeers[peer.ProcessIdentifier].ProcessIdentifier == "" {
-	//	s.view.add(peer)
-	//	s.knownPeers[peer.ProcessIdentifier] = peer
-	//}
 }
 
 func (s *sampling) removePeer(peer Peer) {
 	s.view.remove(peer)
-	s.knownPeers.Delete(peer.ProcessIdentifier)
-	// delete(s.knownPeers, peer.ProcessIdentifier)
+	delete(s.knownPeers, peer.ProcessIdentifier)
 }
 func (s *sampling) selectView(view *View) {
 	switch s.strategy.ViewSelectionStrategy {
@@ -100,15 +93,13 @@ func (s *sampling) passive() {
 			if nwPeer.UdpAddress == "" {
 				continue
 			}
-			self, _ := s.knownPeers.Load(s.selfDescriptor.ProcessIdentifier)
-
 			switch s.strategy.ViewPropagationStrategy {
 			case Push, PushPull:
 				mergedView := MergeView(s.view, selfDescriptor(s.selfDescriptor))
-				buffer := ViewToBytes(mergedView, self.(Peer))
+				buffer := ViewToBytes(mergedView, s.knownPeers[s.selfDescriptor.ProcessIdentifier])
 				rspView, from, err := BytesToView(s.udpClient.send(nwPeer.UdpAddress, buffer))
 				if err == nil {
-					s.knownPeers.Store(from.ProcessIdentifier, from)
+					s.knownPeers[from.ProcessIdentifier] = from
 					_ = &rspView // for PUSH -> []byte("OKAY")
 				} else {
 					s.removePeer(nwPeer)
@@ -116,9 +107,9 @@ func (s *sampling) passive() {
 			default:
 				// send emptyView to nwPeer to trigger response
 				rspView, from, err := BytesToView(s.udpClient.send(nwPeer.UdpAddress,
-					ViewToBytes(View{Nodes: sll.New()}, self.(Peer))))
+					ViewToBytes(View{Nodes: sll.New()}, s.knownPeers[s.selfDescriptor.ProcessIdentifier])))
 				if err == nil {
-					s.knownPeers.Store(from.ProcessIdentifier, from)
+					s.knownPeers[from.ProcessIdentifier] = from
 					receivedView = &rspView
 				} else {
 					s.removePeer(nwPeer)
@@ -137,14 +128,12 @@ func (s *sampling) passive() {
 }
 
 func (s *sampling) ViewFromPeer(receivedView View, peer Peer) []byte {
-	s.knownPeers.Store(peer.ProcessIdentifier, peer)
+	s.knownPeers[peer.ProcessIdentifier] = peer
 	var rsp []byte
 	increaseHopCount(&receivedView)
-	self, _ := s.knownPeers.Load(s.selfDescriptor.ProcessIdentifier)
-
 	if s.strategy.ViewPropagationStrategy == Pull || s.strategy.ViewPropagationStrategy == PushPull {
 		mergedView := MergeView(s.view, selfDescriptor(s.selfDescriptor))
-		rsp = ViewToBytes(mergedView, self.(Peer))
+		rsp = ViewToBytes(mergedView, s.knownPeers[s.selfDescriptor.ProcessIdentifier])
 	}
 
 	merged := mergeViewExcludeNode(s.view, receivedView, s.selfDescriptor)
@@ -217,11 +206,10 @@ func initSampling(udpAddress string, identifier string, strategy PeerSamplingStr
 			Hop:               0,
 			ProcessIdentifier: identifier,
 		},
-		// knownPeers:   make(map[string]Peer),
+		knownPeers:   make(map[string]Peer),
 		udpClient:    getClient(identifier),
 		previousPeer: Peer{},
-		knownPeers:   sync.Map{},
 	}
-	s.knownPeers.Store(s.selfDescriptor.ProcessIdentifier, s.selfDescriptor)
+	s.knownPeers[s.selfDescriptor.ProcessIdentifier] = Peer(s.selfDescriptor)
 	return &s
 }

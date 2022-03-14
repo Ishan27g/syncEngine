@@ -1,6 +1,7 @@
 package engine
 
 import (
+	"context"
 	"sync"
 
 	"github.com/Ishan27g/go-utils/mLogger"
@@ -62,9 +63,9 @@ func (e *Engine) Self() peer.Peer {
 	}
 	return e.self
 }
-func (e *Engine) Start() {
+func (e *Engine) Start(ctx context.Context) {
 	go func() {
-		e.zoneRaft.Start()
+		e.zoneRaft.Start(ctx)
 	}()
 }
 func (e *Engine) AddSyncFollower(p peer.State) {
@@ -107,7 +108,7 @@ func (e *Engine) GetSyncFollowers() []peer.Peer {
 	}
 	return f
 }
-func Init(self peer.Peer, hClient *transport.HttpClient) *Engine {
+func Init(ctx context.Context, self peer.Peer, hClient *transport.HttpClient) *Engine {
 	dataFile := DataFile(self)
 	mLogger.Apply(mLogger.Level(hclog.Trace), mLogger.Color(true))
 	e := &Engine{
@@ -165,7 +166,7 @@ func Init(self peer.Peer, hClient *transport.HttpClient) *Engine {
 	// if follower, monitor zoneLeader hbs. Start syncRaft when elected as leader
 	e.zoneRaft = InitRaft(0, e.votedForRaftLeader, e.hbFromRaftLeader, e.self, &raftLeader, func() {
 		// only once, start zoneRaft hbs when elected as leader
-		startSync.Do(e.startSyncRaft(syncLeader))
+		startSync.Do(e.startSyncRaft(ctx, syncLeader))
 		// send hbs to followers
 		runningFollowers := e.HClient.SendZoneHeartBeat(e.Self(), e.GetFollowers(true).([]peer.Peer)...)
 		e.resetFollowers(true, runningFollowers)
@@ -213,7 +214,7 @@ func (e *Engine) BuildHttpCbs() []transport.HTTPCbs {
 // start sync raft
 // if syncLeader, send sync hbs
 // if not, monitor syncLeader hbs
-func (e *Engine) startSyncRaft(syncLeader peer.Peer) func() {
+func (e *Engine) startSyncRaft(ctx context.Context, syncLeader peer.Peer) func() {
 	return func() {
 		//zoneLeaders := transport.DiscoverRaftLeaders(e.self.Zone)
 		// rsp := e.HClient.FindAndFollowSyncLeader(zoneLeaders, e.self)
@@ -227,7 +228,7 @@ func (e *Engine) startSyncRaft(syncLeader peer.Peer) func() {
 		e.self.Mode = peer.FOLLOWER // syncMode follower
 		e.syncRaft = InitRaft(1, e.votedForSyncLeader, e.hbFromSyncLeader, e.self, &syncLeader, e.syncHbs())
 		e.self.Mode = peer.LEADER
-		go e.syncRaft.Start()
+		go e.syncRaft.Start(ctx)
 	}
 }
 

@@ -36,6 +36,6 @@ func Test_Gossip_Load_Multiple_Rounds(t *testing.T) {
 	}()
 
 	runTest(t, ctx, zone1, bulkMessages, atAny, func() time.Duration {
-		return 1*time.Second + syncDelay
+		return 1 * time.Second
 	})
 }

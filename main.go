@@ -98,7 +98,7 @@ init:
 			<-ctx.Done()
 			cancelInit()
 		}()
-		eng = engine.Init(self, &hClient)
+		eng = engine.Init(ctxInit, self, &hClient)
 		dm = dataManager{
 			vm: data.VersionMap(),
 			state: func() *peer.State {
@@ -189,7 +189,7 @@ init:
 		// go transport.Listen(ctx, rpcServer, httpServer)
 		rpcServer.Start(ctxInit, nil)
 		httpServer.Start(ctxInit, nil)
-		eng.Start()
+		eng.Start(ctxInit)
 
 		<-time.After(engine.Monitor_Timeout)
 

@@ -158,6 +158,19 @@ func (dm *dataManager) GetPacketAddresses(ctx context.Context, ok *proto.Ok) (*p
 	return &proto.Peers{Peers: peers}, nil
 }
 
+func (dm *dataManager) getNw(isHttp bool) []string {
+	allPeers := transport.GetNetwork(dm.state().Self)
+	var addrs []string
+	for _, p := range allPeers {
+		if isHttp {
+			addrs = append(addrs, p.HttpAddr())
+		} else {
+			addrs = append(addrs, p.GrpcAddr())
+		}
+	}
+	return addrs
+}
+
 func (dm *dataManager) GetNetworkView(ctx context.Context, ok *proto.Ok) (*proto.Peers, error) {
 	if !dm.isZoneLeader() || !dm.isSyncLeader() {
 		return &proto.Peers{Peers: []*proto.Peer{}}, nil
@@ -343,7 +356,7 @@ func (dm *dataManager) waitOnMissingPackets(ctx context.Context, hClient *transp
 
 func (dm *dataManager) download(mp string, hClient *transport.HttpClient) {
 	dm.downloadingPacket++
-	dm.Info("Retrieving missing packet ", "id", mp)
+	dm.Info("download: Retrieving missing packet ", "id", mp)
 	var peers []string
 	goto lookup
 lookup:
@@ -353,21 +366,22 @@ lookup:
 			dm.downloadingPacket--
 			return
 		}
-		peers = []string{}
-		if !dm.isZoneLeader() {
-			// ask raftLeader for missing packet addresses
-			peers = append(peers, dm.state().RaftLeader.GrpcAddr())
-		} else if dm.isSyncLeader() {
-			for _, p := range dm.zonePeers() {
-				peers = append(peers, p.GrpcAddr())
-			}
-			for _, p := range dm.syncPeers() {
-				peers = append(peers, p.GrpcAddr())
-			}
-		} else {
-			// ask syncLeader for missing packet addresses
-			peers = append(peers, dm.state().SyncLeader.GrpcAddr())
-		}
+		// peers = []string{}
+		// if !dm.isZoneLeader() {
+		// 	// ask raftLeader for missing packet addresses
+		// 	peers = append(peers, dm.state().RaftLeader.GrpcAddr())
+		// } else if dm.isSyncLeader() {
+		// 	for _, p := range dm.zonePeers() {
+		// 		peers = append(peers, p.GrpcAddr())
+		// 	}
+		// 	for _, p := range dm.syncPeers() {
+		// 		peers = append(peers, p.GrpcAddr())
+		// 	}
+		// } else {
+		// 	// ask syncLeader for missing packet addresses
+		// 	peers = append(peers, dm.state().SyncLeader.GrpcAddr())
+		// }
+		peers = dm.getNw(false) // grpc addrs
 	}
 	// ask leader for peers where packet is available
 	ctx1, cancel := context.WithDeadline(context.Background(), time.Now().Add(60*time.Second))
@@ -376,41 +390,43 @@ lookup:
 	var err error
 	for _, p := range peers {
 		c := transport.NewDataSyncClient(ctx1, p)
-		dm.Info("Asking for packet", "id", mp, "peer", p)
+		dm.Info("download: Asking for packet", "id", mp, "from peer", p)
 		peersHttp, err = c.GetPacketAddresses(ctx1, &proto.Ok{Id: mp})
 		if err != nil {
 			dm.Error(err.Error())
 		}
 		if len(peersHttp.Peers) > 0 {
+			dm.Info("download: Found packet", "id", mp, "at peer", p)
 			found = true
 			break
 		}
 	}
 	cancel()
 	if !found {
-		dm.Warn("Retrying packet lookup in network", "id", mp)
+		dm.Warn("download: Retrying packet lookup in network", "id", mp)
 		<-time.After(300 * time.Millisecond)
 		goto lookup
 	}
+	rand.Seed(time.Now().UnixMicro())
+
 	goto download
 download:
 	{
-		rand.Seed(time.Now().UnixMicro())
 		r := rand.Intn(len(peersHttp.Peers))
 		//r := 0
 		if peersHttp.Peers[r].PeerId == dm.state().Self.HttpAddr() {
 			goto download
 		}
-		dm.Warn("Packet downloading from  - " + peersHttp.Peers[r].PeerId)
+		dm.Warn("download: Packet downloading from  - " + peersHttp.Peers[r].PeerId)
 		// retrieve missing packet from a random peer
 		gp := hClient.DownloadPacket(peersHttp.Peers[r].PeerId, mp)
 		if gp != nil {
 			dm.Data.SaveOrderedPacket(*gp)
-			dm.Info("Saved missing packet ", "id", mp, "data", gp.GetData())
+			dm.Info("download: Saved missing packet ", "id", mp, "data", gp.GetData())
 			dm.downloadingPacket--
 			return
 		} else {
-			dm.Error("Cannot retrieve missing packet ", "id", mp, "peer", peersHttp.Peers[r].PeerId)
+			dm.Error("download: Cannot retrieve missing packet ", "id", mp, "peer", peersHttp.Peers[r].PeerId)
 			goto lookup
 		}
 	}

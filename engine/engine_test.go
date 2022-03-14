@@ -1,6 +1,7 @@
 package engine
 
 import (
+	"context"
 	"testing"
 	"time"
 
@@ -34,8 +35,10 @@ func TestInit(t *testing.T) {
 
 	hClient := transport.NewHttpClient(self.HttpPort, jp.Get().Tracer(tracerId))
 
-	e := Init(self, &hClient)
-	e.Start()
+	ctx, can := context.WithCancel(context.Background())
+	defer can()
+	e := Init(ctx, self, &hClient)
+	e.Start(ctx)
 
 	assert.NotEmpty(t, e.Self())
 	assert.NotEmpty(t, e.DataFile)
