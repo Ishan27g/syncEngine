@@ -22,23 +22,23 @@ func mockRegistry() {
 }
 func TestInit(t *testing.T) {
 	mockRegistry()
-	t.Cleanup(func() {
-		registry.ShutDown()
-	})
+	defer registry.ShutDown()
+
 	<-time.After(2 * time.Second)
 	var self peer.Peer
 	self, transport.RegistryUrl = peer.FromEnv(envFile)
 
-	url := "http://localhost:14268/api/traces"
 	tracerId := self.HttpAddr()
 
-	jp := provider.InitJaeger(context.Background(), tracerId, self.HttpPort, url)
+	jp := provider.Init("jaeger", tracerId, self.HttpPort)
 	defer jp.Close()
 
 	hClient := transport.NewHttpClient(self.HttpPort, jp.Get().Tracer(tracerId))
 
-	e := Init(self, &hClient)
-	e.Start()
+	ctx, can := context.WithCancel(context.Background())
+	defer can()
+	e := Init(ctx, self, &hClient)
+	e.Start(ctx)
 
 	assert.NotEmpty(t, e.Self())
 	assert.NotEmpty(t, e.DataFile)

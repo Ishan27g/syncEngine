@@ -25,15 +25,6 @@ type localData struct {
 	missingPackets chan string // ids of packets not present in orderedGossip
 }
 
-func (ld *localData) GetOrderedPackets() []gossip.Packet {
-	ld.mx.Lock()
-	defer ld.mx.Unlock()
-	var orderedPackets []gossip.Packet
-	ld.orderedData.orderedGossip.Each(func(key interface{}, value interface{}) {
-		orderedPackets = append(orderedPackets, *value.(*gossip.Packet))
-	})
-	return orderedPackets
-}
 func (ld *localData) GetPacket(id string) *gossip.Packet {
 	if gP := ld.orderedData.getPacket(id); gP != nil {
 		return gP
@@ -44,7 +35,18 @@ func (ld *localData) GetPacket(id string) *gossip.Packet {
 	fmt.Println("no packet - ", id)
 	return nil
 }
+func (ld *localData) GetOrderedPackets() []gossip.Packet {
+	ld.mx.Lock()
+	defer ld.mx.Unlock()
+	var orderedPackets []gossip.Packet
+	ld.orderedData.orderedGossip.Each(func(key interface{}, value interface{}) {
+		orderedPackets = append(orderedPackets, *value.(*gossip.Packet))
+	})
+	return orderedPackets
+}
 func (ld *localData) GetPacketAvailableAt(id string) []string {
+	ld.mx.Lock()
+	defer ld.mx.Unlock()
 	if gP := ld.GetPacket(id); gP != nil {
 		return gP.AvailableAt
 	}

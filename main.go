@@ -21,10 +21,12 @@ import (
 	"github.com/Ishan27g/syncEngine/snapshot"
 	"github.com/Ishan27g/syncEngine/transport"
 	"github.com/Ishan27g/syncEngine/utils"
+
+	cmap "github.com/orcaman/concurrent-map"
 )
 
 // var envFile = ".envFiles/1.leader.env"
-const RoundResolution = 1000 // or the num of messages per round ~ number of events that will be ordered
+var cm = cmap.New()
 
 func getData(eng *engine.Engine, dm *dataManager) func() transport.SyncRsp {
 	return func() transport.SyncRsp {
@@ -53,123 +55,146 @@ func getData(eng *engine.Engine, dm *dataManager) func() transport.SyncRsp {
 	}
 }
 
-func Start(ctx context.Context, envFile string) (*dataManager, *gossipManager, *provider.JaegerProvider) {
+func Start(ctx context.Context, envFile string) (*dataManager, *gossipManager, *provider.TraceProvider) {
+	mLogger.Apply(mLogger.Level(hclog.Trace), mLogger.Color(true))
 
 	var self peer.Peer
 	self, transport.RegistryUrl = peer.FromEnv(envFile)
 
 	//self.GrpcPort = self.HttpPort
 
-	tracerId := self.HttpAddr()
+	tracerId := self.HostName + self.HttpPort
+	//	tracerId := self.HttpAddr()
 
-	//url := "http://localhost:14268/api/traces"
+	// jp := provider.Init("zipkin", tracerId, self.FakeName)
+	jp := provider.Init("jaeger", tracerId, self.FakeName)
+	go func(ctx context.Context, jp provider.TraceProvider) {
+		<-ctx.Done()
+		jp.Close()
+	}(ctx, jp)
 
-	// jp := provider.InitJaeger(context.Background(), tracerId, self.HttpPort, url)
-	// go func(ctx context.Context, jp *provider.JaegerProvider) {
-	// 	<-ctx.Done()
-	// 	jp.Close()
-	// }(ctx, jp)
+	hClient := transport.NewHttpClient(tracerId, jp.Get().Tracer(tracerId))
 
-	// hClient := transport.NewHttpClient(self.HttpPort, jp.Get().Tracer(tracerId))
-	hClient := transport.NewHttpClient(self.HttpPort, nil)
-
-	eng := engine.Init(self, &hClient)
+	var eng *engine.Engine
+	var dm dataManager
+	var gm gossipManager
+	var vm voteManager
 
 	gsp, gspRcv := gossip.Config(self.HostName, self.UdpPort, self.HttpAddr()) // id=availableAt for packet
-
-	mLogger.Apply(mLogger.Level(hclog.Trace), mLogger.Color(true))
-	gm := gossipManager{
-		gsp: gsp,
-		rcv: gspRcv,
-	}
-	vm := voteManager{self: func() *peer.Peer {
+	gm = newGossipManager(gsp, gspRcv)
+	vm = voteManager{self: func() *peer.Peer {
 		s := eng.Self()
 		return &s
 	}, voted: make(chan peer.Peer)}
 
-	dm := dataManager{
-		vm: data.VersionMap(),
-		state: func() *peer.State {
-			return eng.State()
-		},
-		sm: &snapshot.Manager{
-			RoundNum:         0,
-			Count:            0,
-			SnapShot:         snapshot.Empty(eng.DataFile),
-			LastSnapshotHash: "",
-		},
-		Data:          data.InitData(),
-		Events:        data.InitEvents(),
-		Tmp:           data.InitEvents(),
-		LastOrderHash: "",
-		zonePeers: func() []peer.Peer {
-			return eng.GetFollowers()
-		},
-		syncPeers: func() []peer.Peer {
-			return eng.GetSyncFollowers()
-		},
-		Logger:    mLogger.Get("dm" + self.HttpPort),
-		nextRound: make(chan int),
-	}
+	var cancelInit context.CancelFunc
+	var ctxInit context.Context
+	goto init
 
-	httpCbs := append(eng.BuildHttpCbs(), []transport.HTTPCbs{
-		transport.WithRaftFollowerCb(func(peer peer.Peer) {
-			eng.AddFollower(peer)
-			gm.gsp.Add(gossip.Peer{
-				UdpAddress:        peer.UdpAddr(),
-				ProcessIdentifier: peer.HttpAddr(),
-				Hop:               0,
-			})
-		}),
-		transport.WithSyncFollowerCb(func(peer peer.Peer) {
-			eng.AddSyncFollower(peer)
-			gm.gsp.Add(gossip.Peer{
-				UdpAddress:        peer.UdpAddr(),
-				ProcessIdentifier: peer.HttpAddr(),
-				Hop:               0,
-			})
-		}),
-		transport.WithSyncInitialOrderCb(getData(eng, &dm)),
-		transport.WithSnapshotFile(eng.DataFile),
-		transport.WithPacketCb(getPacket(&dm)),
-		transport.WithGossipSend(gm.Gossip),
-		transport.WithRoundNumCb(func(roundNum int) {
-			go func() {
-				goto wait
-			wait:
-				{
-					if !dm.canSnapshot() {
-						<-time.After(1 * time.Second)
-						goto wait
+init:
+	{
+		ctxInit, cancelInit = context.WithCancel(ctx)
+		go func() {
+			<-ctx.Done()
+			cancelInit()
+		}()
+		eng = engine.Init(ctxInit, self, &hClient)
+		dm = dataManager{
+			vm: data.VersionMap(),
+			state: func() *peer.State {
+				return eng.State()
+			},
+			sm: &snapshot.Manager{
+				RoundNum:         0,
+				Count:            0,
+				SnapShot:         snapshot.Empty(eng.DataFile),
+				LastSnapshotHash: "",
+			},
+			Data:          data.InitData(),
+			Events:        data.InitEvents(),
+			Tmp:           data.InitEvents(),
+			LastOrderHash: "",
+			zonePeers: func() []peer.Peer {
+				return eng.GetFollowers(true).([]peer.Peer)
+			},
+			syncPeers: func() []peer.Peer {
+				return eng.GetSyncFollowers()
+			},
+			Logger:    mLogger.Get("dm" + self.HttpPort),
+			nextRound: make(chan int),
+		}
+
+		httpCbs := append(eng.BuildHttpCbs(), []transport.HTTPCbs{
+			transport.WithRaftFollowerCb(func(p peer.Peer) {
+				eng.AddFollower(peer.State{
+					Self:       p,
+					RaftLeader: peer.Peer{},
+					SyncLeader: peer.Peer{},
+				})
+				gm.gsp.Add(gossip.Peer{
+					UdpAddress:        p.UdpAddr(),
+					ProcessIdentifier: p.HttpAddr(),
+					Hop:               0,
+				})
+				dm.Info("Added follower", "raft", p.HttpAddr())
+			}),
+			transport.WithSyncFollowerCb(func(p peer.Peer) {
+				eng.AddSyncFollower(peer.State{
+					Self:       p,
+					RaftLeader: peer.Peer{},
+					SyncLeader: peer.Peer{},
+				})
+				gm.gsp.Add(gossip.Peer{
+					UdpAddress:        p.UdpAddr(),
+					ProcessIdentifier: p.HttpAddr(),
+					Hop:               0,
+				})
+				dm.Info("Added follower", "sync", p.HttpAddr())
+			}),
+			transport.WithSyncInitialOrderCb(getData(eng, &dm)),
+			transport.WithSnapshotFile(eng.DataFile),
+			transport.WithPacketCb(getPacket(&dm)),
+			transport.WithGossipSend(gm.Gossip),
+			transport.WithRoundNumCb(func(roundNum int) {
+				go func() {
+					goto wait
+				wait:
+					{
+						if !dm.canSnapshot() {
+							<-time.After(1 * time.Second)
+							goto wait
+						}
 					}
-				}
-				dm.saveSnapshot()
-				dm.sm.RoundNum++
-				dm.sendRoundNum(&hClient)
-				dm.sm.Round()
-				dm.Events.Reset()
-			}()
-		}),
-	}...)
+					dm.saveSnapshot()
+					dm.sm.RoundNum++
+					dm.sendRoundNum(&hClient)
+					dm.sm.Round()
+					dm.Events.Reset()
+				}()
+			}),
+			transport.WithFollowerListCb(func() []peer.State {
+				return eng.GetFollowers(false).([]peer.State)
+			}),
+		}...)
 
-	opts := []transport.RpcOption{
-		transport.WithPort(self.GrpcPort),
-		transport.WithDataServer(&dm),
-		transport.WithVotingServer(&vm),
+		opts := []transport.RpcOption{
+			transport.WithPort(self.GrpcPort),
+			transport.WithDataServer(&dm),
+			transport.WithVotingServer(&vm),
+		}
+
+		rpcServer := transport.NewRpcServer(opts...)
+		httpServer := transport.NewHttpSrv(self.HttpPort, tracerId, httpCbs...)
+
+		// go transport.Listen(ctx, rpcServer, httpServer)
+		rpcServer.Start(ctxInit, nil)
+		httpServer.Start(ctxInit, nil)
+		eng.Start(ctxInit)
+
+		<-time.After(engine.Monitor_Timeout)
+
+		dm.Info("started...", "isZoneLeader", dm.isZoneLeader(), "isSyncLeader", dm.isSyncLeader())
 	}
-
-	rpcServer := transport.NewRpcServer(opts...)
-	httpServer := transport.NewHttpSrv(self.HttpPort, tracerId, httpCbs...)
-
-	// go transport.Listen(ctx, rpcServer, httpServer)
-	rpcServer.Start(ctx, nil)
-	httpServer.Start(ctx, nil)
-	eng.Start()
-
-	<-time.After(engine.Hb_Timeout)
-
-	dm.Info("started...", "isZoneLeader", dm.isZoneLeader(), "isSyncLeader", dm.isSyncLeader())
-
 	var p *proto.Peers
 	var gossipPeers []gossip.Peer
 
@@ -179,27 +204,40 @@ func Start(ctx context.Context, envFile string) (*dataManager, *gossipManager, *
 	ctx1, cancel := context.WithDeadline(context.Background(), time.Now().Add(5*time.Second))
 	defer cancel()
 	if !dm.isZoneLeader() && !dm.isSyncLeader() { // follower
+		if dm.state().RaftLeader.HttpAddr() == "" {
+			cancelInit()
+			goto init
+		}
 		hClient.SendSyncRequest(dm.state().RaftLeader.HttpAddr(), &initialEventOrder, &entries, dm.state().Self)
 		c := transport.NewDataSyncClient(ctx1, dm.state().RaftLeader.GrpcAddr())
 		p, _ = c.GetNetworkView(ctx1, &proto.Ok{})
 
 	} else if dm.isZoneLeader() && !dm.isSyncLeader() { // zoneLeader
+		if dm.state().SyncLeader.HttpAddr() == "" {
+			cancelInit()
+			goto init
+		}
 		hClient.SendSyncRequest(dm.state().SyncLeader.HttpAddr(), &initialEventOrder, &entries, dm.state().Self)
 		c := transport.NewDataSyncClient(ctx1, dm.state().SyncLeader.GrpcAddr())
 		p, _ = c.GetNetworkView(ctx1, &proto.Ok{})
-	} else { // syncLeader
-		// first node in network
 	}
+	// else { // syncLeader
+	// first node in network
+	// continue
+	//	}
 	if p != nil {
 		for _, peer := range p.Peers {
-			gossipPeers = append(gossipPeers, gossip.Peer{
-				UdpAddress:        peer.UdpAddress,
-				ProcessIdentifier: peer.PeerId,
-				Hop:               0,
-			})
+			if peer.UdpAddress != dm.state().Self.UdpAddr() {
+				gossipPeers = append(gossipPeers, gossip.Peer{
+					UdpAddress:        peer.UdpAddress,
+					ProcessIdentifier: peer.PeerId,
+					Hop:               0,
+				})
+			}
 		}
 	}
 	gm.gsp.Join(gossipPeers...)
+	dm.Warn("Gossip-Network", "peers", fmt.Sprintf("%v", gossipPeers))
 	if len(entries) > 0 {
 		dm.sm.Sync(entries...)
 		dm.sm.Round()

@@ -21,7 +21,6 @@ import (
 	"go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp"
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/baggage"
-	semconv "go.opentelemetry.io/otel/semconv/v1.7.0"
 	"go.opentelemetry.io/otel/trace"
 )
 
@@ -37,6 +36,7 @@ type HttpClient struct {
 }
 
 func NewHttpClient(id string, tr trace.Tracer) HttpClient {
+
 	return HttpClient{
 		Logger:  mLogger.Get("http-client" + id),
 		tr:      tr,
@@ -88,6 +88,7 @@ func (hc *HttpClient) sendHttp(url string, spanName string, b []byte) *peer.Stat
 	if rsp := hc.SendHttp(req, spanName, traceData(nil)); rsp != nil {
 		return parseRsp(rsp)
 	}
+	logger.Error(url)
 	return nil
 }
 func (hc *HttpClient) FindAndFollowRaftLeader(raftPeers *[]peer.Peer, self peer.Peer) *peer.State {
@@ -109,64 +110,6 @@ func (hc *HttpClient) FindAndFollowSyncLeader(raftLeaders *[]peer.Peer, self pee
 	}
 	return nil
 }
-func (hc *HttpClient) SendHttp(req *http.Request, spanName string, data traceData) []byte {
-
-	ctx, cancel := context.WithCancel(req.Context())
-	span := trace.SpanFromContext(req.Context())
-	if !span.IsRecording() && hc.tracing {
-		ctx, span = hc.tr.Start(ctx, spanName, trace.WithAttributes(semconv.MessagingDestinationKey.String(req.URL.Path)))
-		defer span.End()
-	}
-	now := time.Now()
-
-	var resp *http.Response
-
-	defer func() {
-		cancel()
-		span.SetAttributes(attribute.String("took time", time.Since(now).String()))
-		//span.SetStatus(codes.Code(resp.StatusCode), resp.Status)
-		//span.End()
-	}()
-	span.AddEvent(stringJson(data))
-	// add baggage to span
-	bag, err := baggage.Parse("username=goku")
-	if err != nil {
-		logger.Trace("ERROR parsing baggage" + err.Error())
-		return nil
-	}
-	ctx = baggage.ContextWithBaggage(ctx, bag)
-
-	client := http.Client{Transport: otelhttp.NewTransport(http.DefaultTransport), Timeout: time.Second * 10}
-
-	outReq, _ := http.NewRequestWithContext(ctx, req.Method, req.URL.String(), req.Body)
-	for key, value := range req.Header {
-		for _, v := range value {
-			outReq.Header.Add(key, v)
-		}
-	}
-	resp, err = client.Do(outReq)
-	if err != nil {
-		logger.Trace("ERROR reading response " + err.Error())
-		return nil
-	}
-	span = trace.SpanFromContext(outReq.Context())
-	// on error return nil
-	if resp.StatusCode < 200 || resp.StatusCode > 205 {
-		span.AddEvent("Client response code", trace.WithAttributes(attribute.String("Success", resp.Status)))
-		span.SetAttributes(attribute.String("Client response code", resp.Status))
-		return nil
-	}
-	body, err := ioutil.ReadAll(resp.Body)
-	if err != nil {
-		span.AddEvent("Client response code", trace.WithAttributes(attribute.String("Error", resp.Status)))
-		span.SetAttributes(attribute.String("Client response code", resp.Status))
-		logger.Trace("ERROR reading body. " + err.Error())
-		return nil
-	}
-	defer resp.Body.Close()
-	return body
-
-}
 func (hc *HttpClient) SendPing(p string) *peer.State {
 	url := p + baseUrl + "/whoAmI"
 	req, err := http.NewRequest("GET", url, nil)
@@ -186,18 +129,20 @@ func (hc *HttpClient) SendPing(p string) *peer.State {
 	return nil
 }
 
-func (hc *HttpClient) SendSyncLeaderHb(from peer.Peer, to ...string) {
+func (hc *HttpClient) SendSyncLeaderHb(from peer.Peer, to ...string) []*peer.State {
 	rand.Seed(time.Now().Unix())
 	tkr := time.Tick(250 * time.Millisecond)
 	b, e := json.Marshal(&from)
 	if e != nil {
 		logger.Trace("Bad payload  " + e.Error())
 	}
+	var syncFollowers []*peer.State
 	for _, s := range to {
 		<-tkr
 		url := s + baseUrl + "/leader/syncLeader/HB"
-		hc.sendHttp(url, "SendSyncLeaderHb", b)
+		syncFollowers = append(syncFollowers, hc.sendHttp(url, "SendSyncLeaderHb", b))
 	}
+	return syncFollowers
 }
 
 func (hc *HttpClient) SendZoneHeartBeat(from peer.Peer, to ...peer.Peer) []*peer.State {
@@ -205,14 +150,38 @@ func (hc *HttpClient) SendZoneHeartBeat(from peer.Peer, to ...peer.Peer) []*peer
 	if e != nil {
 		logger.Trace("Bad payload  " + e.Error())
 	}
-	var followers []*peer.State
-	for _, p := range to {
-		url := p.HttpAddr() + baseUrl + "/follower/receiveHeartBeat"
-		//logger.Debug("sending heartbeat to " + url)
-		followers = append(followers, hc.sendHttp(url, "SendZoneHeartBeat", b))
-	}
+	var followers = make(chan *peer.State, len(to))
+	var wg sync.WaitGroup
 
-	return followers
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	ctx, span := hc.tr.Start(ctx, "SendZoneHeartBeat")
+	defer span.End()
+
+	for _, p := range to {
+		wg.Add(1)
+		go func(p peer.Peer, followers chan *peer.State) {
+			defer wg.Done()
+			url := p.HttpAddr() + baseUrl + "/follower/receiveHeartBeat"
+
+			req, err := http.NewRequestWithContext(ctx, "POST", url, bytes.NewBuffer(b))
+			if err != nil {
+				logger.Trace("Bad request  " + err.Error())
+				return
+			}
+			req.Header.Set("Content-Type", "application/json; charset=UTF-8")
+			if rsp := hc.SendHttp(req, "SendZoneHeartBeat", traceData(nil)); rsp != nil {
+				followers <- parseRsp(rsp)
+			}
+		}(p, followers)
+	}
+	wg.Wait()
+	close(followers)
+	var f []*peer.State
+	for follower := range followers {
+		f = append(f, follower)
+	}
+	return f
 }
 func (hc *HttpClient) SendSyncRequest(leader string, initialEventOrder *[]vClock.Event, entries *[]snapshot.Entry, from peer.Peer) peer.Peer {
 	url := leader + baseUrl + "/leader/syncEventsOrder"
@@ -253,10 +222,10 @@ func (hc *HttpClient) DownloadPacket(from, id string) *gossip.Packet {
 	if rsp := hc.SendHttp(req, "Download-packet", traceData("Download packet : "+url)); rsp != nil {
 		err := json.Unmarshal(rsp, &packet)
 		if err != nil {
-			logger.Trace("Could not retrieved packet " + id)
+			logger.Warn("Could not retrieved packet " + id)
 			return nil
 		}
-		logger.Trace("Retrieved packet " + packet.GetId())
+		// logger.Trace("Retrieved packet " + packet.GetId())
 		return &packet
 	}
 	return nil
@@ -281,15 +250,79 @@ func (hc *HttpClient) SyncOrder(to string, sendOrder []vClock.Event) []vClock.Ev
 	}
 	return nil
 }
-func (hc *HttpClient) SendRoundNum(ctx context.Context, wg *sync.WaitGroup, roundNum int, to ...string) {
+func (hc *HttpClient) SendRoundNum(ctx context.Context, wg *sync.WaitGroup, roundNum int, to ...peer.Peer) {
 	defer wg.Done()
 	for _, s := range to {
-		url := s + baseUrl + "/sync/round/" + strconv.Itoa(roundNum)
-		req, err := http.NewRequestWithContext(ctx, "GET", url, nil)
-		if err != nil {
-			logger.Trace("Bad request  " + err.Error())
-			return
-		}
-		hc.SendHttp(req, "sync-roundNum", traceData("Sync Round "+strconv.Itoa(roundNum)))
+		wg.Add(1)
+		go func(s string) {
+			defer wg.Done()
+			url := s + baseUrl + "/sync/round/" + strconv.Itoa(roundNum)
+			req, err := http.NewRequestWithContext(ctx, "GET", url, nil)
+			if err != nil {
+				logger.Trace("Bad request  " + err.Error())
+				return
+			}
+			hc.SendHttp(req, "sync-roundNum", traceData("Sync Round "+strconv.Itoa(roundNum)))
+		}(s.HttpAddr())
 	}
+}
+
+func (hc *HttpClient) SendHttp(req *http.Request, spanName string, data traceData) []byte {
+
+	ctx, cancel := context.WithCancel(req.Context())
+	span := trace.SpanFromContext(req.Context())
+	if !span.IsRecording() && hc.tracing {
+		ctx, span = hc.tr.Start(ctx, spanName)
+		defer span.End()
+	}
+	now := time.Now()
+
+	var resp *http.Response
+
+	defer func() {
+		cancel()
+		span.SetAttributes(attribute.String("took time", time.Since(now).String()))
+		//span.SetStatus(codes.Code(resp.StatusCode), resp.Status)
+		//span.End()
+	}()
+	span.AddEvent(stringJson(data))
+	// add baggage to span
+	bag, err := baggage.Parse("username=goku")
+	if err != nil {
+		logger.Trace("ERROR parsing baggage" + err.Error())
+		// return nil
+	}
+	ctx = baggage.ContextWithBaggage(ctx, bag)
+
+	client := http.Client{Transport: otelhttp.NewTransport(http.DefaultTransport), Timeout: ConnectionTimeout}
+
+	outReq, _ := http.NewRequestWithContext(ctx, req.Method, req.URL.String(), req.Body)
+	for key, value := range req.Header {
+		for _, v := range value {
+			outReq.Header.Add(key, v)
+		}
+	}
+	resp, err = client.Do(outReq)
+	if err != nil {
+		logger.Trace("ERROR reading response " + err.Error())
+		return nil
+	}
+	span = trace.SpanFromContext(outReq.Context())
+
+	// on error return nil
+	if resp.StatusCode < 200 || resp.StatusCode > 205 {
+		span.AddEvent("Client response code", trace.WithAttributes(attribute.String("Success", resp.Status)))
+		span.SetAttributes(attribute.String("Client response code", resp.Status))
+		return nil
+	}
+	body, err := ioutil.ReadAll(resp.Body)
+	if err != nil {
+		span.AddEvent("Client response code", trace.WithAttributes(attribute.String("Error", resp.Status)))
+		span.SetAttributes(attribute.String("Client response code", resp.Status))
+		logger.Trace("ERROR reading body. " + err.Error())
+		return nil
+	}
+	defer resp.Body.Close()
+	return body
+
 }

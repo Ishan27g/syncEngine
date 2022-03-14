@@ -16,7 +16,7 @@ const Monitor_Timeout = 5 * time.Second
 const Hb_Timeout = 3 * time.Second
 
 type Raft interface {
-	Start()
+	Start(ctx context.Context)
 	Details() string
 	GetState() string
 	GetTerm() int
@@ -80,7 +80,7 @@ func InitRaft(mode int, votedForLeader chan peer.Peer, hbFromLeader chan peer.Pe
 		hbFromLeader:      hbFromLeader,
 		votedForLeader:    votedForLeader,
 		sendHbToFollowers: actionWhenLeader,
-		Logger:            mLogger.Get("Raft" + self.HttpAddr()),
+		Logger:            mLogger.Get("Raft" + self.HttpPort),
 	}
 	if leader != nil {
 		var l peer.Peer
@@ -91,16 +91,16 @@ func InitRaft(mode int, votedForLeader chan peer.Peer, hbFromLeader chan peer.Pe
 	return &r
 }
 
-func (r *raft) Start() {
+func (r *raft) Start(ctx context.Context) {
 	switch r.self.Mode {
 	case peer.LEADER:
 		r.currentLeader = r.self
-		go r.sendHbs()
+		go r.sendHbs(ctx)
 	default:
 		if r.currentLeader.FakeName == "" {
 			r.follow(r.currentLeader)
 		}
-		go r.waitOnHbs()
+		go r.waitOnHbs(ctx)
 	}
 }
 func (r *raft) tryElection() bool {
@@ -116,9 +116,12 @@ func (r *raft) tryElection() bool {
 		LeaderGrpcPort: r.self.GrpcPort,
 		LeaderHostname: r.self.GrpcPort,
 	}
-
-	voted := r.election(grpcs, term)
-	fmt.Println(voted)
+	var voted = false
+	if len(grpcs) == 0 {
+		voted = true
+	} else {
+		voted = r.election(grpcs, term)
+	}
 	if voted {
 		r.self.Mode = peer.LEADER
 		r.setTerm(termCount)
@@ -140,19 +143,21 @@ func possiblePeers(zone int) []string {
 func (r *raft) election(raftPeers []string, term *proto.Term) bool {
 
 	//r.Warn("Requesting votes from peers  for term-" + strconv.Itoa(int(term.TermCount)))
-	ctx, cancel := context.WithTimeout(context.Background(), 6*time.Second)
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 	votes := 0
 	for _, peer := range raftPeers {
-		p := transport.NewVotingClient(peer)
+		p := transport.NewVotingClient(ctx, peer)
 		if p == nil {
 			continue
 		}
 		voted, err := p.RequestVotes(ctx, term)
+		if voted == nil {
+			continue
+		}
 		if voted.Elected && err == nil {
 			votes++
 		}
-		p.Disconnect()
 	}
 	//r.Warn("VOTED? " + fmt.Sprintf("%v,%v", votes, raftPeers))
 
@@ -161,7 +166,7 @@ func (r *raft) election(raftPeers []string, term *proto.Term) bool {
 
 // receive heartbeats or voted notification from http/rpc
 // start election after failing to receive any
-func (r *raft) waitOnHbs() {
+func (r *raft) waitOnHbs(ctx context.Context) {
 	for {
 		//	r.Info("waiting on hbs")
 		try := 1
@@ -188,7 +193,8 @@ func (r *raft) waitOnHbs() {
 					goto wait
 				}
 				if r.tryElection() {
-					r.sendHbs()
+					r.Warn("Elected Zone Leader")
+					r.sendHbs(ctx)
 					return
 				} else {
 					r.Warn("NOT ELECTED")
@@ -215,14 +221,18 @@ func (r *raft) details() string {
 }
 
 // send heartbeats to followers
-func (r *raft) sendHbs() {
+func (r *raft) sendHbs(ctx context.Context) {
 	r.currentLeader = r.self
 	for {
-		<-time.After(Hb_Timeout)
-		if r.self != r.currentLeader {
-			r.Error(fmt.Sprintf("r.self != r.currentLeader - %v %v", r.self, r.currentLeader))
-			panic("invalid state")
+		select {
+		case <-ctx.Done():
+			return
+		case <-time.After(Hb_Timeout):
+			if r.self != r.currentLeader {
+				r.Error(fmt.Sprintf("r.self != r.currentLeader - %v %v", r.self, r.currentLeader))
+				panic("invalid state")
+			}
+			r.sendHbToFollowers()
 		}
-		r.sendHbToFollowers()
 	}
 }

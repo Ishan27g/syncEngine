@@ -3,7 +3,6 @@ package transport
 import (
 	"context"
 	"fmt"
-	"time"
 
 	"github.com/Ishan27g/syncEngine/proto"
 	"go.opentelemetry.io/contrib/instrumentation/google.golang.org/grpc/otelgrpc"
@@ -12,25 +11,31 @@ import (
 )
 
 type VotingClient struct {
-	can context.CancelFunc
 	proto.RaftVotingClient
 }
 
-func (vc *VotingClient) Disconnect() {
-	vc.can()
-}
-func NewVotingClient(serverAddress string) *VotingClient {
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-	grpc.WaitForReady(true)
-	grpcClient, err := grpc.DialContext(ctx, serverAddress,
+// NewVotingClient returns vote grpc client. Wraps connections close based on default conn timeout
+func NewVotingClient(ctx context.Context, serverAddress string) *VotingClient {
+	var grpcClient *grpc.ClientConn
+	var err error
+
+	ctxClose, can := context.WithTimeout(ctx, ConnectionTimeout)
+	go func() {
+		<-ctx.Done()
+		can()
+		grpcClient.Close()
+	}()
+
+	grpc.WaitForReady(false)
+	grpcClient, err = grpc.DialContext(ctxClose, serverAddress,
+		grpc.WithBlock(),
 		grpc.WithTransportCredentials(insecure.NewCredentials()),
 		grpc.WithUnaryInterceptor(otelgrpc.UnaryClientInterceptor()),
 		grpc.WithStreamInterceptor(otelgrpc.StreamClientInterceptor()))
 	if err != nil {
 		fmt.Println(err.Error())
-		cancel()
 		return nil
 	}
-	vc := VotingClient{cancel, proto.NewRaftVotingClient(grpcClient)}
+	vc := VotingClient{proto.NewRaftVotingClient(grpcClient)}
 	return &vc
 }

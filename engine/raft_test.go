@@ -1,6 +1,7 @@
 package engine
 
 import (
+	"context"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -44,18 +45,18 @@ func mockHbToFollower(self peer.Peer, to ...chan peer.Peer) func() {
 	return mockHbsFromLeader
 }
 
-func runLeader(self peer.Peer, mockHbsFromLeader func()) Raft {
+func runLeader(ctx context.Context, self peer.Peer, mockHbsFromLeader func()) Raft {
 	lraft := InitRaft(0, nil, nil, self, &self, mockHbsFromLeader)
-	lraft.Start()
+	lraft.Start(ctx)
 	return lraft
 }
-func runFollowers(leader peer.Peer, followers []peer.Peer, fHbFromLeader ...chan peer.Peer) []Raft {
+func runFollowers(ctx context.Context, leader peer.Peer, followers []peer.Peer, fHbFromLeader ...chan peer.Peer) []Raft {
 	var f []Raft
 	for i, follower := range followers {
 		fBvoted := make(chan peer.Peer)
 		fAraft := InitRaft(0, fBvoted, fHbFromLeader[i], follower, &leader, nil)
 		f = append(f, fAraft)
-		fAraft.Start()
+		fAraft.Start(ctx)
 	}
 	return f
 }

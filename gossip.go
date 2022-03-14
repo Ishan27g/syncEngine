@@ -1,15 +1,24 @@
 package main
 
-import gossip "github.com/Ishan27g/gossipProtocol"
+import (
+	gossip "github.com/Ishan27g/gossipProtocol"
+)
 
 type gossipManager struct {
 	gsp gossip.Gossip
-	rcv <-chan gossip.Packet
+	rcv chan gossip.Packet
+}
+
+func newGossipManager(gsp gossip.Gossip, rcv <-chan gossip.Packet) gossipManager {
+	gm := gossipManager{gsp: gsp, rcv: make(chan gossip.Packet, gossipBuffer)}
+	go func() {
+		for {
+			gm.rcv <- <-rcv
+		}
+	}()
+	return gm
 }
 
 func (g *gossipManager) Gossip(data string) {
 	g.gsp.SendGossip(data)
-}
-func (g *gossipManager) Receive() gossip.Packet {
-	return <-g.rcv
 }

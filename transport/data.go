@@ -15,9 +15,20 @@ type DataSyncClient struct {
 	proto.DataSyncClient
 }
 
+// NewDataSyncClient returns data grpc client. Wraps connections close based on default conn timeout
 func NewDataSyncClient(ctx context.Context, serverAddress string) *DataSyncClient {
-	grpc.WaitForReady(true)
-	grpcClient, err := grpc.DialContext(ctx, serverAddress,
+	var grpcClient *grpc.ClientConn
+	var err error
+
+	ctxClose, can := context.WithTimeout(ctx, ConnectionTimeout)
+	go func() {
+		<-ctx.Done()
+		can()
+		grpcClient.Close()
+	}()
+	grpc.WaitForReady(false)
+	grpcClient, err = grpc.DialContext(ctxClose, serverAddress,
+		grpc.WithBlock(),
 		grpc.WithTransportCredentials(insecure.NewCredentials()),
 		grpc.WithUnaryInterceptor(otelgrpc.UnaryClientInterceptor()),
 		grpc.WithStreamInterceptor(otelgrpc.StreamClientInterceptor()))
@@ -25,6 +36,7 @@ func NewDataSyncClient(ctx context.Context, serverAddress string) *DataSyncClien
 		fmt.Println("Error connecting to grpc client-", err.Error())
 		return nil
 	}
+
 	vc := DataSyncClient{proto.NewDataSyncClient(grpcClient)}
 	return &vc
 }
