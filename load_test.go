@@ -13,7 +13,7 @@ import (
 
 const bulkMessages = 100
 
-func Test_Gossip_Load_Single_Round(t *testing.T) {
+func Test_Gossip_Load_Single_Zone(t *testing.T) {
 	ctx, can := context.WithCancel(context.Background())
 	defer func() {
 		can()
@@ -26,7 +26,7 @@ func Test_Gossip_Load_Single_Round(t *testing.T) {
 		return time.Millisecond * 100
 	})
 }
-func Test_Gossip_Load_Multiple_Rounds(t *testing.T) {
+func Test_Gossip_Load_Multiple_Zones(t *testing.T) {
 	ctx, can := context.WithCancel(context.Background())
 	defer func() {
 		can()
@@ -35,7 +35,11 @@ func Test_Gossip_Load_Multiple_Rounds(t *testing.T) {
 		<-time.After(2 * time.Second)
 	}()
 
-	runTest(t, ctx, zone1, bulkMessages, atAny, func() time.Duration {
-		return 1 * time.Second
-	})
+	// runTest(t, ctx, zone1, bulkMessages, atAny, func() time.Duration {
+	// 	return 1 * time.Second
+	// })
+
+	runTestZones(t, ctx, singleRoundNumMessages, atAny, func() time.Duration {
+		return 500 * time.Millisecond
+	}, []string{zone2, zone3}...)
 }

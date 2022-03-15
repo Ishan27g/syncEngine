@@ -46,8 +46,8 @@ var envFiles = envMap{
 		// envFile + "2.follower.B.env",
 	},
 	envFile + "3.leader.env": []string{
-		//envFile + "3.follower.A.env",
-		//envFile + "3.follower.B.env",
+		// envFile + "3.follower.A.env",
+		// envFile + "3.follower.B.env",
 	},
 }
 
