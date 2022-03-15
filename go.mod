@@ -4,7 +4,7 @@ go 1.17
 
 require (
 	github.com/Ishan27g/go-utils/mLogger v0.0.0-20220308132511-ad5f5c0e8f14
-	github.com/Ishan27g/gossipProtocol v0.0.0-20220313142004-59e0dd2ba52f
+	github.com/Ishan27g/gossipProtocol v0.0.0-20220313162432-7534726014a3
 	github.com/Ishan27g/registry/golang/registry v0.0.0-20220312143626-5ce43317837b
 	github.com/Ishan27g/vClock v0.0.0-20220313143106-98dea0f2d782
 	github.com/emirpasic/gods v1.12.0
@@ -12,6 +12,7 @@ require (
 	github.com/hashicorp/go-hclog v1.2.0
 	github.com/joho/godotenv v1.4.0
 	github.com/orcaman/concurrent-map v1.0.0
+	github.com/patrickmn/go-cache v2.1.0+incompatible
 	github.com/soheilhy/cmux v0.1.5
 	github.com/stretchr/testify v1.7.0
 	github.com/urfave/cli/v2 v2.3.0
@@ -49,7 +50,6 @@ require (
 	github.com/modern-go/concurrent v0.0.0-20180228061459-e0a39a4cb421 // indirect
 	github.com/modern-go/reflect2 v0.0.0-20180701023420-4b7aa43c6742 // indirect
 	github.com/openzipkin/zipkin-go v0.4.0 // indirect
-	github.com/patrickmn/go-cache v2.1.0+incompatible
 	github.com/pmezard/go-difflib v1.0.0 // indirect
 	github.com/rivo/uniseg v0.2.0 // indirect
 	github.com/russross/blackfriday/v2 v2.0.1 // indirect
