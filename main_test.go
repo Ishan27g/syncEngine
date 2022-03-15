@@ -72,7 +72,7 @@ func Test_Multiple_Zones(t *testing.T) {
 		<-time.After(2 * time.Second)
 	}()
 
-	runTestZones(t, ctx, singleRoundNumMessages, atAny, func() time.Duration {
+	runTestZones(t, ctx, singleRoundNumMessages, atLeaderOnly, func() time.Duration {
 		return 500 * time.Millisecond
 	}, []string{zone2, zone3}...)
 }
