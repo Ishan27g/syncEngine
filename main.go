@@ -157,19 +157,12 @@ init:
 			transport.WithGossipSend(gm.Gossip),
 			transport.WithRoundNumCb(func(roundNum int) {
 				go func() {
-					goto wait
-				wait:
-					{
-						if !dm.canSnapshot() {
-							<-time.After(1 * time.Second)
-							goto wait
-						}
-					}
 					dm.saveSnapshot()
 					dm.sm.RoundNum++
 					dm.sendRoundNum(&hClient)
 					dm.sm.Round()
 					dm.Events.Reset()
+					dm.Tmp.Reset()
 				}()
 			}),
 			transport.WithFollowerListCb(func() []peer.State {

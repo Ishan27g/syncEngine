@@ -121,10 +121,8 @@ func (dm *dataManager) NewEvent(ctx context.Context, order *proto.Order) (*proto
 }
 func (dm *dataManager) SaveOrder(ctx context.Context, order *proto.Order) (*proto.Ok, error) {
 	e := utils.OrderToEvents(order)
-	// dm.Info("Saving order " + utils.PrintJson(e))
 	dm.Events.MergeEvents(e...)
 	o := dm.Events.GetOrderedIds()
-	//	d.Info("App order " + utils.PrintJson(e))
 	dm.Data.ApplyOrder(o)
 	orderHash := utils.DefaultHash(o)
 
@@ -133,7 +131,6 @@ func (dm *dataManager) SaveOrder(ctx context.Context, order *proto.Order) (*prot
 	if dm.isZoneLeader() && !dm.isSyncLeader() {
 		if dm.LastOrderHash != orderHash {
 			dm.sendOrderToFollowers(order)
-			dm.Tmp.Reset()
 			dm.LastOrderHash = orderHash
 		}
 	}
